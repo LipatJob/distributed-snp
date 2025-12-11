@@ -120,10 +120,10 @@ if(BUILD_TESTS)
         MPI::MPI_CXX
     )
 
-    # Use MPI to run tests
+    # Use MPI to run tests (use 2 processes to avoid slot issues)
     add_test(NAME MatrixOpsTest 
-             COMMAND ${MPIEXEC_EXECUTABLE} ${MPIEXEC_NUMPROC_FLAG} 4
-                     ${MPIEXEC_PREFLAGS} $<TARGET_FILE:test_matrix_ops> ${MPIEXEC_POSTFLAGS})
+             COMMAND ${MPIEXEC_EXECUTABLE} ${MPIEXEC_NUMPROC_FLAG} 2 --host localhost,10.0.0.2
+                     ${MPIEXEC_PREFLAGS} $<TARGET_FILE:test_matrix_ops> ${MPIEXEC_POSTFLAGS} --allow-run-as-root --oversubscribe)
 endif()
 
 # ============================================================================

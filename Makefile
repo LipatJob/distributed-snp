@@ -17,9 +17,9 @@ JOBS ?= $(shell nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)
 CUDA_ARCH ?= 75
 
 # Distribution settings
-NODES ?= node1 node2 node3 node4
+NODES ?= localhost 10.0.0.2
 REMOTE_USER ?= $(USER)
-REMOTE_DIR ?= ~/new-snp
+REMOTE_DIR ?= ~/distributed-snp-new
 HOSTFILE ?= hostfile.txt
 
 # Colors for output
@@ -28,7 +28,7 @@ YELLOW := \033[0;33m
 BLUE := \033[0;34m
 NC := \033[0m # No Color
 
-.PHONY: all build clean test install configure help debug release run distribute generate-hostfile run-distributed
+.PHONY: all build clean test test-distributed deploy-tests install configure help debug release run distribute generate-hostfile run-distributed
 
 # Default target
 all: build
@@ -42,7 +42,9 @@ help:
 	@echo "  debug        - Build with debug symbols"
 	@echo "  release      - Build with optimizations (default)"
 	@echo "  run          - Run the matrix demo locally"
-	@echo "  test         - Run tests"
+	@echo "  test         - Run tests locally"
+	@echo "  deploy-tests - Deploy test executable to remote nodes"
+	@echo "  test-distributed - Deploy and run tests across distributed nodes"
 	@echo "  distribute   - Distribute binary to remote nodes"
 	@echo "  generate-hostfile - Generate MPI hostfile"
 	@echo "  run-distributed - Run demo on distributed nodes"
@@ -87,15 +89,18 @@ debug:
 release:
 	@$(MAKE) build BUILD_TYPE=Release
 
-# Run the demo
-run: build
-	@echo "$(GREEN)Running matrix demo...$(NC)"
-	@mpirun -np 4 $(BUILD_DIR)/matrix_demo
+# Deploy tests to distributed nodes
+deploy-tests: build
+	@echo "$(GREEN)Deploying tests to distributed nodes...$(NC)"
+	@chmod +x scripts/deploy_tests.sh
+	@./scripts/deploy_tests.sh
+	@echo "$(GREEN)Test deployment complete!$(NC)"
 
-# Run tests
-test: build
-	@echo "$(GREEN)Running tests...$(NC)"
-	@cd $(BUILD_DIR) && ctest --output-on-failure
+# Run distributed tests
+test-distributed: deploy-tests
+	@echo "$(GREEN)Running distributed tests...$(NC)"
+	@chmod +x scripts/run_distributed_tests.sh
+	@./scripts/run_distributed_tests.sh
 
 # Install
 install: build
@@ -125,7 +130,7 @@ generate-hostfile:
 	@echo "$(GREEN)Generating hostfile...$(NC)"
 	@rm -f $(HOSTFILE)
 	@for node in $(NODES); do \
-		echo "$$node slots=4" >> $(HOSTFILE); \
+		echo "$$node slots=1" >> $(HOSTFILE); \
 	done
 	@echo "$(GREEN)Hostfile generated: $(HOSTFILE)$(NC)"
 	@echo "$(BLUE)Contents:$(NC)"
@@ -136,10 +141,8 @@ distribute: build
 	@echo "$(GREEN)Distributing binaries to remote nodes...$(NC)"
 	@for node in $(NODES); do \
 		echo "$(BLUE)Copying to $$node...$(NC)"; \
-		ssh $(REMOTE_USER)@$$node "mkdir -p $(REMOTE_DIR)/bin $(REMOTE_DIR)/lib" || exit 1; \
-		rsync -avz --progress $(BUILD_DIR)/matrix_demo $(REMOTE_USER)@$$node:$(REMOTE_DIR)/bin/ || exit 1; \
-		rsync -avz --progress $(BUILD_DIR)/test_matrix_ops $(REMOTE_USER)@$$node:$(REMOTE_DIR)/bin/ 2>/dev/null || true; \
-		rsync -avz --progress $(BUILD_DIR)/*.so $(BUILD_DIR)/*.a $(REMOTE_USER)@$$node:$(REMOTE_DIR)/lib/ 2>/dev/null || true; \
+		scp -r $(BUILD_DIR)/bin $(REMOTE_USER)@$$node:$(REMOTE_DIR)/; \
+		scp -r $(BUILD_DIR)/lib $(REMOTE_USER)@$$node:$(REMOTE_DIR)/; \
 		echo "$(GREEN)✓ Completed $$node$(NC)"; \
 	done
 	@echo "$(GREEN)Distribution complete!$(NC)"
@@ -147,7 +150,10 @@ distribute: build
 # Run on distributed nodes
 run-distributed: distribute generate-hostfile
 	@echo "$(GREEN)Running matrix demo on distributed nodes...$(NC)"
-	@mpirun --hostfile $(HOSTFILE) $(REMOTE_DIR)/bin/matrix_demo
+	@mpirun --hostfile $(HOSTFILE) \
+		--mca btl_tcp_if_include ens5 \
+		--mca oob_tcp_if_include ens5 \
+	 $(REMOTE_DIR)/bin/matrix_demo
 
 # Check connectivity to all nodes
 check-nodes:
