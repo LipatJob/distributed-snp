@@ -28,7 +28,7 @@ YELLOW := \033[0;33m
 BLUE := \033[0;34m
 NC := \033[0m # No Color
 
-.PHONY: all build clean test test-distributed deploy-tests install configure help debug release run distribute generate-hostfile run-distributed
+.PHONY: all build clean test test-distributed deploy-tests install configure help debug release run distribute generate-hostfile run-distributed snp-demo test-snp
 
 # Default target
 all: build
@@ -42,7 +42,9 @@ help:
 	@echo "  debug        - Build with debug symbols"
 	@echo "  release      - Build with optimizations (default)"
 	@echo "  run          - Run the matrix demo locally"
+	@echo "  snp-demo     - Run the SNP simulator demo locally"
 	@echo "  test         - Run tests locally"
+	@echo "  test-snp     - Run SNP simulator tests locally"
 	@echo "  deploy-tests - Deploy test executable to remote nodes"
 	@echo "  test-distributed - Deploy and run tests across distributed nodes"
 	@echo "  distribute   - Distribute binary to remote nodes"
@@ -154,6 +156,16 @@ run-distributed: distribute generate-hostfile
 		--mca btl_tcp_if_include ens5 \
 		--mca oob_tcp_if_include ens5 \
 	 $(REMOTE_DIR)/bin/matrix_demo
+
+# Run SNP demo locally
+snp-demo: build
+	@echo "$(GREEN)Running SNP simulator demo...$(NC)"
+	@mpirun -np 1 $(BUILD_DIR)/snp_demo --allow-run-as-root
+
+# Run SNP tests locally
+test-snp: build
+	@echo "$(GREEN)Running SNP simulator tests...$(NC)"
+	@mpirun -np 2 $(BUILD_DIR)/test_snp_simulator --allow-run-as-root --oversubscribe
 
 # Check connectivity to all nodes
 check-nodes:

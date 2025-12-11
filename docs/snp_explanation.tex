@@ -1,0 +1,127 @@
+\documentclass{article}
+\usepackage[utf8]{inputenc}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{geometry}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{hyperref}
+
+\geometry{a4paper, margin=1in}
+
+\title{Reference: Spiking Neural P Systems (SN P Systems)\\
+\large Theory and Matrix Representation}
+\author{Generated for LLM Context}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+This document serves as a technical reference for Spiking Neural P Systems (SN P Systems), a class of distributed parallel computing models within Membrane Computing. It details the formal definition, neuron rules, and the matrix representation method used for computational simulation, specifically focusing on the implementation details found in WebSnapse Reloaded and associated matrix representation literature.
+\end{abstract}
+
+\section{Overview}
+Spiking Neural P Systems are inspired by the neurophysiological behavior of neurons sending electrical impulses (spikes) along axons to other neurons via synapses \cite. Structurally, an SN P system is a directed graph where nodes represent neurons and edges represent synapses. The system operates under a global clock, synchronizing all neurons to work in parallel, and is known for trading memory for time to solve computationally hard problems \cite.
+
+\section{Formal Definition}
+An SN P system of degree $m \ge 1$ is formally defined as a tuple \cite:
+\begin{equation}
+    \Pi = (O, \sigma_1, ..., \sigma_m, syn, in, out)
+\end{equation}
+Where:
+\begin{itemize}
+    \item $O = \{a\}$ is the singleton alphabet representing a spike \cite.
+    \item $\sigma_1, ..., \sigma_m$ are neurons of the form $\sigma_i = (n_i, \mathcal{R}_i)$, where:
+    \begin{itemize}
+        \item $n_i \ge 0$ is the initial number of spikes in neuron $i$ \cite.
+        \item $\mathcal{R}_i$ is a finite set of rules \cite.
+    \end{itemize}
+    \item $syn \subseteq \{1, ..., m\} \times \{1, ..., m\}$ represents synapses between neurons \cite.
+    \item $in, out \in \{1, ..., m\}$ indicate the input and output neurons \cite.
+\end{itemize}
+
+\section{Neuron Rules and Semantics}
+Neurons process spikes using two specific types of rules. A rule is considered \textit{applicable} if the current number of spikes in the neuron satisfies the rule's regular expression condition.
+
+\subsection{Firing Rules}
+A firing rule takes the form:
+\begin{equation}
+    E/a^c \rightarrow a^p; d
+\end{equation}
+\begin{itemize}
+    \item $E$: A regular expression over $\{a\}$. The rule applies only if the neuron's spike count $k \in L(E)$ \cite.
+    \item $c$: The number of spikes consumed.
+    \item $p$: The number of spikes produced.
+    \item $d$: The delay (in time steps) before spikes are emitted.
+\end{itemize}
+When a firing rule with delay $d$ is applied, the neuron becomes \textbf{closed} (inactive). It cannot receive or send spikes for $d$ time steps. After the delay elapses, it becomes \textbf{open} and emits $p$ spikes to all connected neighbors \cite.
+
+\subsection{Forgetting Rules}
+A forgetting rule takes the form:
+\begin{equation}
+    a^s \rightarrow \lambda
+\end{equation}
+If the neuron contains exactly $s$ spikes (and the regular expression $E$ is satisfied), $s$ spikes are removed, and no spikes are produced \cite.
+
+\section{Matrix Representation}
+To enable efficient simulation on CPUs and GPUs, the system state is represented using linear algebra vectors and matrices \cite.
+
+\subsection{System State Vectors}
+At any time step $k$:
+\begin{itemize}
+    \item \textbf{Configuration Vector ($C^{(k)}$)}: A $1 \times m$ vector where $c_i^{(k)}$ is the spike count in neuron $i$ \cite.
+    \item \textbf{Status Vector ($St^{(k)}$)}: A $1 \times m$ vector indicating neuron availability. $st_i^{(k)} = 1$ if neuron $i$ is open, and $0$ if closed (due to delay) \cite.
+    \item \textbf{Indicator Vector ($Iv^{(k)}$)}: A $1 \times n$ vector (where $n$ is the total number of rules in the system) indicating which rules are firing. $iv_j^{(k)} = 1$ if rule $j$ fires, else $0$ \cite.
+    \item \textbf{Spike Train Vector ($STv^{(k)}$)}: A $1 \times m$ vector representing spikes entering the system from the environment (input neurons) at time $k$ \cite.
+\end{itemize}
+
+\subsection{Spiking Transition Matrix ($M_{\Pi}$)}
+The Spiking Transition Matrix $M_{\Pi}$ is an $n \times m$ matrix (Rules $\times$ Neurons) that encodes the net spike change \cite:
+\begin{equation}
+    M_{\Pi} = [a_{ij}]_{n \times m} \quad \text{where } a_{ij} = 
+    \begin{cases} 
+      -c & \text{if rule } i \text{ is in neuron } j \text{ and consumes } c \\
+      p & \text{if rule } i \text{ produces } p \text{ spikes sent to neuron } j \\
+      0 & \text{otherwise}
+   \end{cases}
+\end{equation}
+
+\subsection{The Transition Equation}
+The evolution of the system from time $k$ to $k+1$, accounting for delays and input spike trains, is defined by the following algebraic update \cite:
+
+\begin{equation}
+    C^{(k+1)} = C^{(k)} + St^{(k+1)} \odot (Iv^{(k)} \cdot M_{\Pi} + STv^{(k)})
+\end{equation}
+
+Where:
+\begin{itemize}
+    \item $\odot$ denotes the Hadamard (element-wise) product.
+    \item $\cdot$ denotes standard matrix multiplication.
+    \item $St^{(k+1)}$ acts as a mask, ensuring closed neurons do not receive spikes (spikes sent to closed neurons are lost) \cite.
+\end{itemize}
+
+\section{Algorithmic Implementation}
+Based on the WebSnapse Reloaded implementation logic, the computation cycle for the next configuration follows these steps \cite:
+
+\begin{algorithm}
+\caption{Compute Next Configuration (WebSnapse Logic)}
+\begin{algorithmic}[1]
+\State \textbf{Input:} $C^{(k)}$, $St^{(k)}$, $Iv^{(k)}$, $M_{\Pi}$, $STv^{(k)}$
+\State \textbf{Output:} $C^{(k+1)}$
+\State $NG \gets STv^{(k)}$ \Comment{Initialize Net Gain with input spikes}
+\State $Delta \gets Iv^{(k)} \cdot M_{\Pi}$ \Comment{Compute net internal spikes (Matrix Mul)}
+\State $NG \gets NG + Delta$
+\State $MaskedGain \gets St^{(k+1)} \odot NG$ \Comment{Apply Status Mask (Hadamard)}
+\State $C^{(k+1)} \gets C^{(k)} + MaskedGain$ \Comment{Update Configuration}
+\end{algorithmic}
+\end{algorithm}
+
+\section{Note on Non-Determinism and Delays}
+\begin{itemize}
+    \item \textbf{Non-Determinism:} If multiple rules in a single neuron are applicable, one is chosen non-deterministically to form the Indicator Vector $Iv^{(k)}$ \cite.
+    \item \textbf{Delays:} A rule with delay $d$ updates the Delay Status Vector $DSv$. When $DSv_i$ reaches 0, the associated neuron becomes open ($St_i = 1$) \cite.
+\end{itemize}
+
+\end{document}

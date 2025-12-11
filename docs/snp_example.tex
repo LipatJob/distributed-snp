@@ -1,0 +1,119 @@
+\section{Verification Example: System with Delay}
+This section provides a step-by-step execution trace of a specific Spiking Neural P System with delay. This example is derived from the literature \citeand can be used to verify the correctness of a simulator's matrix-vector operations.
+
+\subsection{System Definition}
+Consider a system $\Pi$ with $m=3$ neurons and $n=4$ rules.
+
+\textbf{Neurons:}
+\begin{itemize}
+    \item $\sigma_1$: Rules $R_1 = \{ r_1: a/a \rightarrow a; 0 \}$
+    \item $\sigma_2$: Rules $R_2 = \{ r_2: a/a \rightarrow a; 0, \quad r_3: a^2 \rightarrow \lambda; 0 \}$
+    \item $\sigma_3$: Rules $R_3 = \{ r_4: a \rightarrow a; 2 \}$ (Delay = 2)
+\end{itemize}
+
+\textbf{Synapses:}
+$syn = \{ (1,2), (2,1), (2,3), (3,2) \}$
+
+\textbf{Initial Configuration:}
+$C^{(0)} = (1, 0, 1)$
+
+\subsection{Matrix Definitions}
+Based on the rules and synapses, we define the Production Matrix ($PM$) and Consumption Matrix ($CM$). The rows correspond to rules $(r_1, r_2, r_3, r_4)$ and columns to neurons $(\sigma_1, \sigma_2, \sigma_3)$.
+
+\begin{equation}
+    PM_{\Pi} = \begin{bmatrix}
+    0 & 1 & 0 \\
+    1 & 0 & 1 \\
+    0 & 0 & 0 \\
+    0 & 1 & 0
+    \end{bmatrix}, \quad
+    CM_{\Pi} = \begin{bmatrix}
+    1 & 0 & 0 \\
+    0 & 1 & 0 \\
+    0 & 2 & 0 \\
+    0 & 0 & 1
+    \end{bmatrix}
+\end{equation}
+
+The Spiking Transition Matrix $M_{\Pi} = PM_{\Pi} - CM_{\Pi}$ is:
+\begin{equation}
+    M_{\Pi} = \begin{bmatrix}
+    -1 & 1 & 0 \\
+    1 & -1 & 1 \\
+    0 & -2 & 0 \\
+    0 & 1 & -1
+    \end{bmatrix}
+\end{equation}
+
+\subsection{Execution Trace}
+The following trace details the state vectors at each time step $k$.
+
+\subsubsection*{Step $k=0$}
+\begin{itemize}
+    \item \textbf{Configuration:} $C^{(0)} = (1, 0, 1)$
+    \item \textbf{Status:} $St^{(0)} = (1, 1, 1)$ (All open)
+    \item \textbf{Selection:}
+    \begin{itemize}
+        \item $\sigma_1$ has 1 spike. Rule $r_1$ applies.
+        \item $\sigma_3$ has 1 spike. Rule $r_4$ applies.
+    \end{itemize}
+    \item \textbf{Spiking Vector:} $Sp^{(0)} = (1, 0, 0, 1)$ (Rules $r_1$ and $r_4$ fire).
+    \item \textbf{Indicator Vector:} $Iv^{(0)} = (1, 0, 0, 0)$.
+    \begin{itemize}
+        \item Note: $Iv_4 = 0$ because $r_4$ has a delay of 2. It consumes spikes now ($Sp_4=1$) but produces nothing yet.
+    \end{itemize}
+    \item \textbf{Net Gain Calculation:}
+    \begin{itemize}
+        \item $Gv^{(0)} = Iv^{(0)} \cdot PM = (1, 0, 0, 0) \cdot PM = (0, 1, 0)$
+        \item $Lv^{(0)} = Sp^{(0)} \cdot CM = (1, 0, 0, 1) \cdot CM = (1, 0, 1)$
+        \item $NG^{(0)} = St^{(0)} \odot Gv^{(0)} - Lv^{(0)} = (0, 1, 0) - (1, 0, 1) = (-1, 1, -1)$
+    \end{itemize}
+    \item \textbf{Next Configuration:} $C^{(1)} = C^{(0)} + NG^{(0)} = (0, 1, 0)$
+    \item \textbf{Delay Update:} Rule $r_4$ fired with delay 2. $\sigma_3$ becomes closed.
+\end{itemize}
+
+\subsubsection*{Step $k=1$}
+\begin{itemize}
+    \item \textbf{Configuration:} $C^{(1)} = (0, 1, 0)$
+    \item \textbf{Status:} $St^{(1)} = (1, 1, 0)$
+    \begin{itemize}
+        \item $\sigma_3$ is closed (Delay Status $DSt_4 = 2$).
+    \end{itemize}
+    \item \textbf{Selection:}
+    \begin{itemize}
+        \item $\sigma_2$ has 1 spike. Rule $r_2$ ($a/a \rightarrow a$) applies.
+    \end{itemize}
+    \item \textbf{Vectors:} $Sp^{(1)} = (0, 1, 0, 0)$, $Iv^{(1)} = (0, 1, 0, 0)$.
+    \item \textbf{Next Configuration:}
+    \begin{itemize}
+        \item $Gv^{(1)} = (1, 0, 1)$ (Rule $r_2$ targets $\sigma_1, \sigma_3$)
+        \item $Lv^{(1)} = (0, 1, 0)$
+        \item Masking: $\sigma_3$ is closed ($St_3=0$), so it rejects the incoming spike.
+        \item $NG^{(1)} = (1, 1, 0) \odot (1, 0, 1) - (0, 1, 0) = (1, -1, 0)$
+    \end{itemize}
+    \item \textbf{Result:} $C^{(2)} = (1, 0, 0)$
+\end{itemize}
+
+\subsubsection*{Step $k=2$}
+\begin{itemize}
+    \item \textbf{Configuration:} $C^{(2)} = (1, 0, 0)$
+    \item \textbf{Status:} $St^{(2)} = (1, 1, 0)$ ($\sigma_3$ delay decrements to 1, still closed).
+    \item \textbf{Selection:} $\sigma_1$ has 1 spike. Rule $r_1$ applies.
+    \item \textbf{Vectors:} $Sp^{(2)} = (1, 0, 0, 0)$, $Iv^{(2)} = (1, 0, 0, 0)$.
+    \item \textbf{Result:} $C^{(3)} = (0, 1, 0)$
+\end{itemize}
+
+\subsubsection*{Step $k=3$}
+\begin{itemize}
+    \item \textbf{Configuration:} $C^{(3)} = (0, 1, 0)$
+    \item \textbf{Status:} $St^{(3)} = (1, 1, 1)$
+    \begin{itemize}
+        \item $\sigma_3$ delay decrements to 0. It opens.
+    \end{itemize}
+    \item \textbf{Selection:} $\sigma_2$ fires $r_2$.
+    \item \textbf{Vectors:} $Sp^{(3)} = (0, 1, 0, 0)$.
+    \item \textbf{Result:} $C^{(4)} = (1, 0, 1)$
+    \begin{itemize}
+        \item $\sigma_3$ is now open, so it successfully receives the spike from $\sigma_2$.
+    \end{itemize}
+\end{itemize}
