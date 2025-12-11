@@ -1,0 +1,131 @@
+# Build directories
+build/
+cmake-build-*/
+out/
+bin/
+lib/
+
+# CMake files
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile.cmake
+install_manifest.txt
+compile_commands.json
+CTestTestfile.cmake
+_deps/
+
+# Compiled Object files
+*.o
+*.obj
+*.lo
+*.slo
+*.ko
+*.elf
+
+# Precompiled Headers
+*.gch
+*.pch
+
+# Compiled Dynamic libraries
+*.so
+*.so.*
+*.dylib
+*.dll
+
+# Compiled Static libraries
+*.a
+*.lib
+*.la
+
+# Executables
+*.exe
+*.out
+*.app
+*.i*86
+*.x86_64
+*.hex
+matrix_demo
+test_matrix_ops
+
+# CUDA compiled files
+*.ptx
+*.cubin
+*.fatbin
+*.cu.cpp
+
+# Debug files
+*.dSYM/
+*.su
+*.idb
+*.pdb
+
+# MPI and distributed computing files
+hostfile.txt
+hostfile*.txt
+*.hosts
+
+# IDE and Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+*.code-workspace
+
+# CMake build type directories
+Debug/
+Release/
+RelWithDebInfo/
+MinSizeRel/
+
+# Testing
+Testing/
+test_detail.xml
+*.gcov
+*.gcda
+*.gcno
+
+# Package managers
+*.egg-info/
+dist/
+downloads/
+eggs/
+.eggs/
+*.egg
+
+# Documentation
+docs/_build/
+docs/_static/
+docs/_templates/
+
+# Logs and temporary files
+*.log
+*.tmp
+*.temp
+*.bak
+*.swp
+*.swo
+
+# Profiling
+*.prof
+*.nvprof
+*.nvvp
+gmon.out
+
+# Core dumps
+core
+core.*
+
+# OS specific
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+.Spotlight-V100
+.Trashes
+
+# Backup files
+*~
+*.orig
