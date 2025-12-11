@@ -10,7 +10,7 @@
 \geometry{a4paper, margin=1in}
 
 \title{Reference: Spiking Neural P Systems (SN P Systems)\\
-\large Theory and Matrix Representation}
+\large Deterministic Implementation Guide}
 \author{Generated for LLM Context}
 \date{\today}
 
@@ -19,11 +19,11 @@
 \maketitle
 
 \begin{abstract}
-This document serves as a technical reference for Spiking Neural P Systems (SN P Systems), a class of distributed parallel computing models within Membrane Computing. It details the formal definition, neuron rules, and the matrix representation method used for computational simulation, specifically focusing on the implementation details found in WebSnapse Reloaded and associated matrix representation literature.
+This document serves as a technical reference for Spiking Neural P Systems (SN P Systems), a class of distributed parallel computing models within Membrane Computing. It details the formal definition, neuron rules, and the matrix representation method used for computational simulation. \textbf{Note:} For the purpose of this reference implementation and verification, non-determinism is disregarded in favor of a fixed rule priority order.
 \end{abstract}
 
 \section{Overview}
-Spiking Neural P Systems are inspired by the neurophysiological behavior of neurons sending electrical impulses (spikes) along axons to other neurons via synapses \cite. Structurally, an SN P system is a directed graph where nodes represent neurons and edges represent synapses. The system operates under a global clock, synchronizing all neurons to work in parallel, and is known for trading memory for time to solve computationally hard problems \cite.
+Spiking Neural P Systems are inspired by the neurophysiological behavior of neurons sending electrical impulses (spikes) along axons to other neurons via synapses \cite. Structurally, an SN P system is a directed graph where nodes represent neurons and edges represent synapses. The system operates under a global clock, synchronizing all neurons to work in parallel \cite.
 
 \section{Formal Definition}
 An SN P system of degree $m \ge 1$ is formally defined as a tuple \cite:
@@ -65,6 +65,9 @@ A forgetting rule takes the form:
 \end{equation}
 If the neuron contains exactly $s$ spikes (and the regular expression $E$ is satisfied), $s$ spikes are removed, and no spikes are produced \cite.
 
+\subsection{Deterministic Execution Assumption}
+Standard SN P systems are non-deterministic: if multiple rules are applicable in a single neuron, one is chosen arbitrarily. \textbf{For this implementation guide, we disregard non-determinism.} We assume a total ordering of rules (e.g., by Rule ID). If multiple rules are applicable for a neuron, the rule with the \textbf{lowest ID} is selected automatically.
+
 \section{Matrix Representation}
 To enable efficient simulation on CPUs and GPUs, the system state is represented using linear algebra vectors and matrices \cite.
 
@@ -103,25 +106,32 @@ Where:
 \end{itemize}
 
 \section{Algorithmic Implementation}
-Based on the WebSnapse Reloaded implementation logic, the computation cycle for the next configuration follows these steps \cite:
+The computation cycle for the next configuration, using the deterministic assumption, follows these steps \cite:
 
 \begin{algorithm}
-\caption{Compute Next Configuration (WebSnapse Logic)}
+\caption{Compute Next Configuration (Deterministic)}
 \begin{algorithmic}[1]
-\State \textbf{Input:} $C^{(k)}$, $St^{(k)}$, $Iv^{(k)}$, $M_{\Pi}$, $STv^{(k)}$
+\State \textbf{Input:} $C^{(k)}$, $St^{(k)}$, $M_{\Pi}$, $STv^{(k)}$
 \State \textbf{Output:} $C^{(k+1)}$
-\State $NG \gets STv^{(k)}$ \Comment{Initialize Net Gain with input spikes}
-\State $Delta \gets Iv^{(k)} \cdot M_{\Pi}$ \Comment{Compute net internal spikes (Matrix Mul)}
+\State $Iv^{(k)} \gets \mathbf{0}$
+\For{each neuron $i \in \{1, \dots, m\}$}
+    \If{$St^{(k)}_i == 1$} \Comment{If neuron is open}
+        \State Find all rules $r \in \mathcal{R}_i$ applicable to $C^{(k)}_i$
+        \If{applicable rules exist}
+            \State Select rule $r_{best}$ with lowest ID \Comment{Deterministic Choice}
+            \State $Iv^{(k)}_{r_{best}} \gets 1$
+        \EndIf
+    \EndIf
+\EndFor
+\State $NG \gets STv^{(k)}$
+\State $Delta \gets Iv^{(k)} \cdot M_{\Pi}$ \Comment{Matrix Multiplication}
 \State $NG \gets NG + Delta$
-\State $MaskedGain \gets St^{(k+1)} \odot NG$ \Comment{Apply Status Mask (Hadamard)}
-\State $C^{(k+1)} \gets C^{(k)} + MaskedGain$ \Comment{Update Configuration}
+\State $MaskedGain \gets St^{(k+1)} \odot NG$ \Comment{Hadamard Product}
+\State $C^{(k+1)} \gets C^{(k)} + MaskedGain$ \Comment{Matrix Addition}
 \end{algorithmic}
 \end{algorithm}
 
-\section{Note on Non-Determinism and Delays}
-\begin{itemize}
-    \item \textbf{Non-Determinism:} If multiple rules in a single neuron are applicable, one is chosen non-deterministically to form the Indicator Vector $Iv^{(k)}$ \cite.
-    \item \textbf{Delays:} A rule with delay $d$ updates the Delay Status Vector $DSv$. When $DSv_i$ reaches 0, the associated neuron becomes open ($St_i = 1$) \cite.
-\end{itemize}
+\section{Simplification Note}
+In this deterministic model, we assume strict priority. If the system design naturally allows for multiple valid paths (non-determinism), this implementation will strictly follow the path dictated by the rule ordering (e.g., lower index fires first).
 
 \end{document}

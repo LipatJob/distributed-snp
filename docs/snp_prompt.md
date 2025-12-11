@@ -1,7 +1,12 @@
+Create a parallel and distributed implementation of the spiking neural p system using CUDA and MPI. I've attached the necessary papers for reference. Assume that the SNP system is deterministic for now. Each node has a T4 GPU. Assume that the input size is large. The system must distribute the work among different nodes to maximize performance. It must also minimize the communication between Processes, Processor <-> GPU, and GPU <-> Global Memory
+
+
+Create an SnpSimulator class that implements the following interface:
+
+```
 #pragma once
 #include <vector>
 #include <cstdint>
-#include <memory>
 
 // Forward declaration for device pointers if needed in other contexts
 // using distinct types helps type safety
@@ -27,7 +32,7 @@ public:
         int numNeurons, 
         int numRules,
         const std::vector<int>& ruleOwners, // Map rule_idx -> neuron_idx
-        const std::vector<float>& matrixValues, // 
+        const std::vector<float>& matrixValues,
         const std::vector<int>& matrixColIndices,
         const std::vector<int>& matrixRowPtrs,
         const std::vector<SpikeCount>& initialSpikes
@@ -50,35 +55,4 @@ public:
      */
     virtual void Reset() = 0;
 };
-
-// =========================================================================
-// Simulator Type Enumeration
-// =========================================================================
-
-enum class SimulatorType {
-    NAIVE,          // NaiveSnpSimulator: Replicated state with AllReduce
-    DISTRIBUTED     // SnpSimulator: Partitioned state with point-to-point
-};
-
-// =========================================================================
-// Factory Functions
-// =========================================================================
-
-/**
- * @brief Create a NaiveSnpSimulator instance
- * @return Unique pointer to the simulator instance
- */
-std::unique_ptr<ISnpSimulator> makeNaiveSimulator();
-
-/**
- * @brief Create a SnpSimulator (distributed) instance
- * @return Unique pointer to the simulator instance
- */
-std::unique_ptr<ISnpSimulator> makeDistributedSimulator();
-
-
-/**
- * @brief Create a CPU-based SnpSimulator instance
- * @return Unique pointer to the simulator instance
- */
-std::unique_ptr<ISnpSimulator> makeCpuSimulator();
+```

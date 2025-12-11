@@ -1,5 +1,21 @@
+\documentclass{article}
+\usepackage[utf8]{inputenc}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{geometry}
+
+\geometry{a4paper, margin=1in}
+
+\title{Verification Example: Deterministic SN P System}
+\author{Generated for LLM Context}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
 \section{Verification Example: System with Delay}
-This section provides a step-by-step execution trace of a specific Spiking Neural P System with delay. This example is derived from the literature \citeand can be used to verify the correctness of a simulator's matrix-vector operations.
+This section provides a step-by-step execution trace of a specific Spiking Neural P System with delay. This example is derived from the literature \citeand is adapted here to verify the correctness of a deterministic simulator implementation.
 
 \subsection{System Definition}
 Consider a system $\Pi$ with $m=3$ neurons and $n=4$ rules.
@@ -17,8 +33,11 @@ $syn = \{ (1,2), (2,1), (2,3), (3,2) \}$
 \textbf{Initial Configuration:}
 $C^{(0)} = (1, 0, 1)$
 
+\subsection{Deterministic Assumption}
+For this verification trace, we assume that if multiple rules are applicable, the rule with the \textbf{lower index} (e.g., $r_2$ over $r_3$) is chosen. In this specific configuration trace, however, ambiguity does not arise as the spike counts uniquely satisfy only one rule at a time.
+
 \subsection{Matrix Definitions}
-Based on the rules and synapses, we define the Production Matrix ($PM$) and Consumption Matrix ($CM$). The rows correspond to rules $(r_1, r_2, r_3, r_4)$ and columns to neurons $(\sigma_1, \sigma_2, \sigma_3)$.
+We define the Production Matrix ($PM$) and Consumption Matrix ($CM$). The rows correspond to rules $(r_1, r_2, r_3, r_4)$ and columns to neurons $(\sigma_1, \sigma_2, \sigma_3)$.
 
 \begin{equation}
     PM_{\Pi} = \begin{bmatrix}
@@ -52,7 +71,7 @@ The following trace details the state vectors at each time step $k$.
 \begin{itemize}
     \item \textbf{Configuration:} $C^{(0)} = (1, 0, 1)$
     \item \textbf{Status:} $St^{(0)} = (1, 1, 1)$ (All open)
-    \item \textbf{Selection:}
+    \item \textbf{Deterministic Selection:}
     \begin{itemize}
         \item $\sigma_1$ has 1 spike. Rule $r_1$ applies.
         \item $\sigma_3$ has 1 spike. Rule $r_4$ applies.
@@ -79,9 +98,10 @@ The following trace details the state vectors at each time step $k$.
     \begin{itemize}
         \item $\sigma_3$ is closed (Delay Status $DSt_4 = 2$).
     \end{itemize}
-    \item \textbf{Selection:}
+    \item \textbf{Deterministic Selection:}
     \begin{itemize}
         \item $\sigma_2$ has 1 spike. Rule $r_2$ ($a/a \rightarrow a$) applies.
+        \item Rule $r_3$ ($a^2 \rightarrow \lambda$) requires 2 spikes, so it does not apply.
     \end{itemize}
     \item \textbf{Vectors:} $Sp^{(1)} = (0, 1, 0, 0)$, $Iv^{(1)} = (0, 1, 0, 0)$.
     \item \textbf{Next Configuration:}
@@ -98,7 +118,7 @@ The following trace details the state vectors at each time step $k$.
 \begin{itemize}
     \item \textbf{Configuration:} $C^{(2)} = (1, 0, 0)$
     \item \textbf{Status:} $St^{(2)} = (1, 1, 0)$ ($\sigma_3$ delay decrements to 1, still closed).
-    \item \textbf{Selection:} $\sigma_1$ has 1 spike. Rule $r_1$ applies.
+    \item \textbf{Deterministic Selection:} $\sigma_1$ has 1 spike. Rule $r_1$ applies.
     \item \textbf{Vectors:} $Sp^{(2)} = (1, 0, 0, 0)$, $Iv^{(2)} = (1, 0, 0, 0)$.
     \item \textbf{Result:} $C^{(3)} = (0, 1, 0)$
 \end{itemize}
@@ -110,10 +130,12 @@ The following trace details the state vectors at each time step $k$.
     \begin{itemize}
         \item $\sigma_3$ delay decrements to 0. It opens.
     \end{itemize}
-    \item \textbf{Selection:} $\sigma_2$ fires $r_2$.
+    \item \textbf{Deterministic Selection:} $\sigma_2$ fires $r_2$.
     \item \textbf{Vectors:} $Sp^{(3)} = (0, 1, 0, 0)$.
     \item \textbf{Result:} $C^{(4)} = (1, 0, 1)$
     \begin{itemize}
         \item $\sigma_3$ is now open, so it successfully receives the spike from $\sigma_2$.
     \end{itemize}
 \end{itemize}
+
+\end{document}

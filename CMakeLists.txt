@@ -48,7 +48,8 @@ add_library(cuda_matrix_ops STATIC
 )
 set_target_properties(cuda_matrix_ops PROPERTIES
     CUDA_SEPARABLE_COMPILATION ON
-    CUDA_ARCHITECTURES "75;80;86"  # Adjust based on your GPU architecture
+    CUDA_RESOLVE_DEVICE_SYMBOLS ON
+    CUDA_ARCHITECTURES "75"  # Adjust based on your GPU architecture
 )
 target_link_libraries(cuda_matrix_ops PUBLIC CUDA::cudart)
 
@@ -58,7 +59,8 @@ add_library(mpi_cuda_matrix_ops STATIC
 )
 set_target_properties(mpi_cuda_matrix_ops PROPERTIES
     CUDA_SEPARABLE_COMPILATION ON
-    CUDA_ARCHITECTURES "75;80;86"  # Adjust based on your GPU architecture
+    CUDA_RESOLVE_DEVICE_SYMBOLS ON
+    CUDA_ARCHITECTURES "75"  # Adjust based on your GPU architecture
 )
 target_link_libraries(mpi_cuda_matrix_ops PUBLIC 
     CUDA::cudart
@@ -72,6 +74,24 @@ target_link_libraries(matrix_ops INTERFACE
     cpu_matrix_ops
     cuda_matrix_ops
     mpi_cuda_matrix_ops
+)
+
+# ============================================================================
+# SNP System Library
+# ============================================================================
+
+add_library(snp_system STATIC
+    src/snp/CpuSnpSimulator.cpp
+    src/snp/NaiveSnpSimulator.cu
+    src/snp/SnpSimulator.cu
+)
+target_link_libraries(snp_system PUBLIC
+    matrix_ops
+    MPI::MPI_CXX
+)
+target_include_directories(snp_system PUBLIC
+    ${PROJECT_SOURCE_DIR}/src/snp
+    ${PROJECT_SOURCE_DIR}/src/linear_algebra
 )
 
 # ============================================================================
@@ -124,13 +144,31 @@ if(BUILD_TESTS)
     add_test(NAME MatrixOpsTest 
              COMMAND ${MPIEXEC_EXECUTABLE} ${MPIEXEC_NUMPROC_FLAG} 2 --host localhost,10.0.0.2
                      ${MPIEXEC_PREFLAGS} $<TARGET_FILE:test_matrix_ops> ${MPIEXEC_POSTFLAGS} --allow-run-as-root --oversubscribe)
+
+    # SNP Simulator Tests
+    add_executable(test_snp_simulator
+        tests/snp/SnpSimulator.cpp
+    )
+    
+    target_link_libraries(test_snp_simulator PRIVATE
+        snp_system
+        matrix_ops
+        GTest::gtest
+        GTest::gtest_main
+        MPI::MPI_CXX
+    )
+
+    # Use MPI to run SNP simulator tests
+    add_test(NAME SnpSimulatorTest
+             COMMAND ${MPIEXEC_EXECUTABLE} ${MPIEXEC_NUMPROC_FLAG} 2 --host localhost,10.0.0.2
+                     ${MPIEXEC_PREFLAGS} $<TARGET_FILE:test_snp_simulator> ${MPIEXEC_POSTFLAGS} --allow-run-as-root --oversubscribe)
 endif()
 
 # ============================================================================
 # Installation
 # ============================================================================
 
-install(TARGETS cpu_matrix_ops cuda_matrix_ops mpi_cuda_matrix_ops matrix_demo
+install(TARGETS cpu_matrix_ops cuda_matrix_ops mpi_cuda_matrix_ops snp_system matrix_demo
     RUNTIME DESTINATION bin
     ARCHIVE DESTINATION lib
     LIBRARY DESTINATION lib

@@ -17,9 +17,10 @@ echo "=============================================="
 echo "Creating remote directories on $REMOTE_HOST..."
 ssh ${REMOTE_USER}@${REMOTE_HOST} "mkdir -p ${BUILD_DIR} ${BUILD_DIR}/lib ${BUILD_DIR}/_deps/googletest-build/lib"
 
-# 2. Copy test executable
-echo "Copying test executable..."
+# 2. Copy test executables
+echo "Copying test executables..."
 scp ${BUILD_DIR}/test_matrix_ops ${REMOTE_USER}@${REMOTE_HOST}:${BUILD_DIR}/
+scp ${BUILD_DIR}/test_snp_simulator ${REMOTE_USER}@${REMOTE_HOST}:${BUILD_DIR}/
 
 # 3. Copy required libraries
 echo "Copying shared libraries..."
@@ -32,13 +33,14 @@ scp ${BUILD_DIR}/_deps/googletest-build/lib/*.a ${REMOTE_USER}@${REMOTE_HOST}:${
 
 # 5. Set permissions
 echo "Setting executable permissions..."
-ssh ${REMOTE_USER}@${REMOTE_HOST} "chmod +x ${BUILD_DIR}/test_matrix_ops"
+ssh ${REMOTE_USER}@${REMOTE_HOST} "chmod +x ${BUILD_DIR}/test_matrix_ops ${BUILD_DIR}/test_snp_simulator"
 
 echo "=============================================="
 echo "Deployment complete!"
 echo "=============================================="
 echo ""
 echo "You can now run distributed tests with:"
-echo "  make test"
+echo "  make test-distributed"
 echo "or manually with:"
 echo "  mpirun -np 2 --host localhost,${REMOTE_HOST} ${BUILD_DIR}/test_matrix_ops"
+echo "  mpirun -np 2 --host localhost,${REMOTE_HOST} ${BUILD_DIR}/test_snp_simulator"
