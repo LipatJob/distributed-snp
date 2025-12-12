@@ -21,6 +21,7 @@ ssh ${REMOTE_USER}@${REMOTE_HOST} "mkdir -p ${BUILD_DIR} ${BUILD_DIR}/lib ${BUIL
 echo "Copying test executables..."
 scp ${BUILD_DIR}/test_matrix_ops ${REMOTE_USER}@${REMOTE_HOST}:${BUILD_DIR}/
 scp ${BUILD_DIR}/test_snp_simulator ${REMOTE_USER}@${REMOTE_HOST}:${BUILD_DIR}/
+scp ${BUILD_DIR}/test_sort ${REMOTE_USER}@${REMOTE_HOST}:${BUILD_DIR}/
 
 # 3. Copy required libraries
 echo "Copying shared libraries..."

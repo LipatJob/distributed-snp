@@ -103,6 +103,22 @@ target_include_directories(snp_system PUBLIC
 )
 
 # ============================================================================
+# SNP Sort Library
+# ============================================================================
+
+add_library(snp_sort STATIC
+    src/sort/SnpSort.cpp
+
+)
+target_link_libraries(snp_sort PUBLIC
+    snp_system
+)
+target_include_directories(snp_sort PUBLIC
+    ${PROJECT_SOURCE_DIR}/src/sort
+    ${PROJECT_SOURCE_DIR}/src/snp
+)
+
+# ============================================================================
 # Main Executable
 # ============================================================================
 
@@ -170,13 +186,31 @@ if(BUILD_TESTS)
     add_test(NAME SnpSimulatorTest
              COMMAND ${MPIEXEC_EXECUTABLE} ${MPIEXEC_NUMPROC_FLAG} 2 --host localhost,10.0.0.2
                      ${MPIEXEC_PREFLAGS} $<TARGET_FILE:test_snp_simulator> ${MPIEXEC_POSTFLAGS} --allow-run-as-root --oversubscribe)
+
+    # SNP Sort Tests
+    add_executable(test_sort
+        tests/sort/SnpSort.cpp
+    )
+    
+    target_link_libraries(test_sort PRIVATE
+        snp_sort
+        snp_system
+        GTest::gtest
+        GTest::gtest_main
+        MPI::MPI_CXX
+    )
+
+    # Use MPI to run SNP sort tests
+    add_test(NAME SnpSortTest
+             COMMAND ${MPIEXEC_EXECUTABLE} ${MPIEXEC_NUMPROC_FLAG} 2 --host localhost,10.0.0.2
+                     ${MPIEXEC_PREFLAGS} $<TARGET_FILE:test_sort> ${MPIEXEC_POSTFLAGS} --allow-run-as-root --oversubscribe)
 endif()
 
 # ============================================================================
 # Installation
 # ============================================================================
 
-install(TARGETS cpu_matrix_ops cuda_matrix_ops mpi_cuda_matrix_ops snp_system matrix_demo
+install(TARGETS cpu_matrix_ops cuda_matrix_ops mpi_cuda_matrix_ops snp_system snp_sort matrix_demo
     RUNTIME DESTINATION bin
     ARCHIVE DESTINATION lib
     LIBRARY DESTINATION lib

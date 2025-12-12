@@ -30,16 +30,28 @@ export LD_LIBRARY_PATH=${BUILD_DIR}/lib:${BUILD_DIR}/_deps/googletest-build/lib:
 #        ${BUILD_DIR}/test_matrix_ops
 
 # Run SNP simulator tests with MPI
+# echo ""
+# echo "Running SNP Simulator Tests..."
+# echo "----------------------------------------------"
+# mpirun -np ${NUM_PROCS} \
+#        --host ${HOSTS} \
+#        --allow-run-as-root \
+#        --mca btl_tcp_if_include ens5 \
+#        --mca oob_tcp_if_include ens5 \
+#        -x LD_LIBRARY_PATH \
+#        ${BUILD_DIR}/test_snp_simulator
+
+# Run sorting tests with MPI
 echo ""
-echo "Running SNP Simulator Tests..."
+echo "Running Sorting Tests..."
 echo "----------------------------------------------"
 mpirun -np ${NUM_PROCS} \
        --host ${HOSTS} \
        --allow-run-as-root \
        --mca btl_tcp_if_include ens5 \
-	   --mca oob_tcp_if_include ens5 \
+       --mca oob_tcp_if_include ens5 \
        -x LD_LIBRARY_PATH \
-       ${BUILD_DIR}/test_snp_simulator
+       ${BUILD_DIR}/test_sort
 
 echo ""
 echo "=============================================="
