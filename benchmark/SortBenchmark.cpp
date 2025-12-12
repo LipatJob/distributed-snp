@@ -14,8 +14,8 @@
 // Forward declare simulator factory functions (from ISnpSimulator.hpp)
 std::unique_ptr<ISnpSimulator> createNaiveCpuSimulator();
 std::unique_ptr<ISnpSimulator> createCudaSimulator();
-// std::unique_ptr<ISnpSimulator> createNaiveCudaMpiSimulator();
-// std::unique_ptr<ISnpSimulator> createCudaMpiSimulator();
+std::unique_ptr<ISnpSimulator> createCudaMpiSimulator();
+
 
 // Wrapper functions to create simulators for benchmark macro
 inline std::unique_ptr<ISnpSimulator> createNaiveCpuSnpSimulator() {
@@ -26,13 +26,9 @@ inline std::unique_ptr<ISnpSimulator> createCudaSnpSimulator() {
     return createCudaSimulator();
 }
 
-// inline std::unique_ptr<ISnpSimulator> createCudaMpiSnpSimulator() {
-//     return createCudaMpiSimulator();
-// }
-
-// inline std::unique_ptr<ISnpSimulator> createNaiveCudaMpiSnpSimulator() {
-//     return createNaiveCudaMpiSimulator();
-// }
+inline std::unique_ptr<ISnpSimulator> createCudaMpiSnpSimulator() {
+    return createCudaMpiSimulator();
+}
 
 // ============================================================================
 // Helper Functions for Test Data Generation
@@ -422,19 +418,6 @@ BENCHMARK_REGISTER_F(SortBenchmarkFixture, CpuSnpSort_1000_1000_RANDOM)->Unit(be
 BENCHMARK_SORT_IMPL(CpuSnpSort, createNaiveCpuSnpSimulator, 1000, 1000, NEARLY_SORTED)
 BENCHMARK_REGISTER_F(SortBenchmarkFixture, CpuSnpSort_1000_1000_NEARLY_SORTED)->Unit(benchmark::kMillisecond);
 
-// Large inputs
-BENCHMARK_SORT_IMPL(CpuSnpSort, createNaiveCpuSnpSimulator, 2000, 2000, RANDOM)
-BENCHMARK_REGISTER_F(SortBenchmarkFixture, CpuSnpSort_2000_2000_RANDOM)->Unit(benchmark::kMillisecond);
-
-BENCHMARK_SORT_IMPL(CpuSnpSort, createNaiveCpuSnpSimulator, 5000, 5000, RANDOM)
-BENCHMARK_REGISTER_F(SortBenchmarkFixture, CpuSnpSort_5000_5000_RANDOM)->Unit(benchmark::kMillisecond);
-
-BENCHMARK_SORT_IMPL(CpuSnpSort, createNaiveCpuSnpSimulator, 10000, 10000, RANDOM)
-BENCHMARK_REGISTER_F(SortBenchmarkFixture, CpuSnpSort_10000_10000_RANDOM)->Unit(benchmark::kMillisecond);
-
-BENCHMARK_SORT_IMPL(CpuSnpSort, createNaiveCpuSnpSimulator, 10000, 10000, NEARLY_SORTED)
-BENCHMARK_REGISTER_F(SortBenchmarkFixture, CpuSnpSort_10000_10000_NEARLY_SORTED)->Unit(benchmark::kMillisecond);
-
 // ============================================================================
 // CUDA SNP Sort Benchmarks
 // ============================================================================
@@ -484,82 +467,52 @@ BENCHMARK_REGISTER_F(SortBenchmarkFixture, CudaSnpSort_2000_2000_RANDOM)->Unit(b
 BENCHMARK_SORT_IMPL(CudaSnpSort, createCudaSnpSimulator, 5000, 5000, RANDOM)
 BENCHMARK_REGISTER_F(SortBenchmarkFixture, CudaSnpSort_5000_5000_RANDOM)->Unit(benchmark::kMillisecond);
 
-BENCHMARK_SORT_IMPL(CudaSnpSort, createCudaSnpSimulator, 10000, 10000, RANDOM)
-BENCHMARK_REGISTER_F(SortBenchmarkFixture, CudaSnpSort_10000_10000_RANDOM)->Unit(benchmark::kMillisecond);
 
-BENCHMARK_SORT_IMPL(CudaSnpSort, createCudaSnpSimulator, 10000, 10000, NEARLY_SORTED)
-BENCHMARK_REGISTER_F(SortBenchmarkFixture, CudaSnpSort_10000_10000_NEARLY_SORTED)->Unit(benchmark::kMillisecond);
+// ============================================================================
+// Optimized CUDA/MPI SNP Sort Benchmarks
+// ============================================================================
 
-// // ============================================================================
-// // Naive CUDA/MPI SNP Sort Benchmarks
-// // ============================================================================
+// Small inputs
+BENCHMARK_SORT_IMPL(CudaMpiSnpSort, createCudaMpiSnpSimulator, 10, 10, RANDOM)
+BENCHMARK_REGISTER_F(SortBenchmarkFixture, CudaMpiSnpSort_10_10_RANDOM)->Unit(benchmark::kMillisecond);
 
-// // Small inputs
-// BENCHMARK_SORT_IMPL(NaiveCudaMpiSnpSort, createNaiveCudaMpiSnpSimulator, 10, 10, RANDOM)
-// BENCHMARK_REGISTER_F(SortBenchmarkFixture, NaiveCudaMpiSnpSort_10_10_RANDOM)->Unit(benchmark::kMillisecond);
+BENCHMARK_SORT_IMPL(CudaMpiSnpSort, createCudaMpiSnpSimulator, 10, 10, SORTED)
+BENCHMARK_REGISTER_F(SortBenchmarkFixture, CudaMpiSnpSort_10_10_SORTED)->Unit(benchmark::kMillisecond);
 
-// BENCHMARK_SORT_IMPL(NaiveCudaMpiSnpSort, createNaiveCudaMpiSnpSimulator, 10, 10, SORTED)
-// BENCHMARK_REGISTER_F(SortBenchmarkFixture, NaiveCudaMpiSnpSort_10_10_SORTED)->Unit(benchmark::kMillisecond);
+BENCHMARK_SORT_IMPL(CudaMpiSnpSort, createCudaMpiSnpSimulator, 10, 10, REVERSE_SORTED)
+BENCHMARK_REGISTER_F(SortBenchmarkFixture, CudaMpiSnpSort_10_10_REVERSE_SORTED)->Unit(benchmark::kMillisecond);
 
-// BENCHMARK_SORT_IMPL(NaiveCudaMpiSnpSort, createNaiveCudaMpiSnpSimulator, 10, 10, REVERSE_SORTED)
-// BENCHMARK_REGISTER_F(SortBenchmarkFixture, NaiveCudaMpiSnpSort_10_10_REVERSE_SORTED)->Unit(benchmark::kMillisecond);
+BENCHMARK_SORT_IMPL(CudaMpiSnpSort, createCudaMpiSnpSimulator, 50, 10, RANDOM)
+BENCHMARK_REGISTER_F(SortBenchmarkFixture, CudaMpiSnpSort_50_10_RANDOM)->Unit(benchmark::kMillisecond);
 
-// BENCHMARK_SORT_IMPL(NaiveCudaMpiSnpSort, createNaiveCudaMpiSnpSimulator, 50, 10, RANDOM)
-// BENCHMARK_REGISTER_F(SortBenchmarkFixture, NaiveCudaMpiSnpSort_50_10_RANDOM)->Unit(benchmark::kMillisecond);
+BENCHMARK_SORT_IMPL(CudaMpiSnpSort, createCudaMpiSnpSimulator, 100, 100, RANDOM)
+BENCHMARK_REGISTER_F(SortBenchmarkFixture, CudaMpiSnpSort_100_100_RANDOM)->Unit(benchmark::kMillisecond);
 
-// BENCHMARK_SORT_IMPL(NaiveCudaMpiSnpSort, createNaiveCudaMpiSnpSimulator, 100, 100, RANDOM)
-// BENCHMARK_REGISTER_F(SortBenchmarkFixture, NaiveCudaMpiSnpSort_100_100_RANDOM)->Unit(benchmark::kMillisecond);
+BENCHMARK_SORT_IMPL(CudaMpiSnpSort, createCudaMpiSnpSimulator, 100, 100, NEARLY_SORTED)
+BENCHMARK_REGISTER_F(SortBenchmarkFixture, CudaMpiSnpSort_100_100_NEARLY_SORTED)->Unit(benchmark::kMillisecond);
 
-// BENCHMARK_SORT_IMPL(NaiveCudaMpiSnpSort, createNaiveCudaMpiSnpSimulator, 100, 100, NEARLY_SORTED)
-// BENCHMARK_REGISTER_F(SortBenchmarkFixture, NaiveCudaMpiSnpSort_100_100_NEARLY_SORTED)->Unit(benchmark::kMillisecond);
+BENCHMARK_SORT_IMPL(CudaMpiSnpSort, createCudaMpiSnpSimulator, 100, 100, FEW_UNIQUE)
+BENCHMARK_REGISTER_F(SortBenchmarkFixture, CudaMpiSnpSort_100_100_FEW_UNIQUE)->Unit(benchmark::kMillisecond);
 
-// BENCHMARK_SORT_IMPL(NaiveCudaMpiSnpSort, createNaiveCudaMpiSnpSimulator, 100, 100, FEW_UNIQUE)
-// BENCHMARK_REGISTER_F(SortBenchmarkFixture, NaiveCudaMpiSnpSort_100_100_FEW_UNIQUE)->Unit(benchmark::kMillisecond);
+BENCHMARK_SORT_IMPL(CudaMpiSnpSort, createCudaMpiSnpSimulator, 100, 100, UNIFORM)
+BENCHMARK_REGISTER_F(SortBenchmarkFixture, CudaMpiSnpSort_100_100_UNIFORM)->Unit(benchmark::kMillisecond);
 
-// BENCHMARK_SORT_IMPL(NaiveCudaMpiSnpSort, createNaiveCudaMpiSnpSimulator, 100, 100, UNIFORM)
-// BENCHMARK_REGISTER_F(SortBenchmarkFixture, NaiveCudaMpiSnpSort_100_100_UNIFORM)->Unit(benchmark::kMillisecond);
+// Medium inputs
+BENCHMARK_SORT_IMPL(CudaMpiSnpSort, createCudaMpiSnpSimulator, 500, 100, RANDOM)
+BENCHMARK_REGISTER_F(SortBenchmarkFixture, CudaMpiSnpSort_500_100_RANDOM)->Unit(benchmark::kMillisecond);
 
-// // ============================================================================
-// // Optimized CUDA/MPI SNP Sort Benchmarks
-// // ============================================================================
+BENCHMARK_SORT_IMPL(CudaMpiSnpSort, createCudaMpiSnpSimulator, 1000, 1000, RANDOM)
+BENCHMARK_REGISTER_F(SortBenchmarkFixture, CudaMpiSnpSort_1000_1000_RANDOM)->Unit(benchmark::kMillisecond);
 
-// // Small inputs
-// BENCHMARK_SORT_IMPL(CudaMpiSnpSort, createCudaMpiSnpSimulator, 10, 10, RANDOM)
-// BENCHMARK_REGISTER_F(SortBenchmarkFixture, CudaMpiSnpSort_10_10_RANDOM)->Unit(benchmark::kMillisecond);
+BENCHMARK_SORT_IMPL(CudaMpiSnpSort, createCudaMpiSnpSimulator, 1000, 1000, NEARLY_SORTED)
+BENCHMARK_REGISTER_F(SortBenchmarkFixture, CudaMpiSnpSort_1000_1000_NEARLY_SORTED)->Unit(benchmark::kMillisecond);
 
-// BENCHMARK_SORT_IMPL(CudaMpiSnpSort, createCudaMpiSnpSimulator, 10, 10, SORTED)
-// BENCHMARK_REGISTER_F(SortBenchmarkFixture, CudaMpiSnpSort_10_10_SORTED)->Unit(benchmark::kMillisecond);
+// Large inputs
+BENCHMARK_SORT_IMPL(CudaMpiSnpSort, createCudaMpiSnpSimulator, 2000, 2000, RANDOM)
+BENCHMARK_REGISTER_F(SortBenchmarkFixture, CudaMpiSnpSort_2000_2000_RANDOM)->Unit(benchmark::kMillisecond);
 
-// BENCHMARK_SORT_IMPL(CudaMpiSnpSort, createCudaMpiSnpSimulator, 10, 10, REVERSE_SORTED)
-// BENCHMARK_REGISTER_F(SortBenchmarkFixture, CudaMpiSnpSort_10_10_REVERSE_SORTED)->Unit(benchmark::kMillisecond);
-
-// BENCHMARK_SORT_IMPL(CudaMpiSnpSort, createCudaMpiSnpSimulator, 50, 10, RANDOM)
-// BENCHMARK_REGISTER_F(SortBenchmarkFixture, CudaMpiSnpSort_50_10_RANDOM)->Unit(benchmark::kMillisecond);
-
-// BENCHMARK_SORT_IMPL(CudaMpiSnpSort, createCudaMpiSnpSimulator, 100, 100, RANDOM)
-// BENCHMARK_REGISTER_F(SortBenchmarkFixture, CudaMpiSnpSort_100_100_RANDOM)->Unit(benchmark::kMillisecond);
-
-// BENCHMARK_SORT_IMPL(CudaMpiSnpSort, createCudaMpiSnpSimulator, 100, 100, NEARLY_SORTED)
-// BENCHMARK_REGISTER_F(SortBenchmarkFixture, CudaMpiSnpSort_100_100_NEARLY_SORTED)->Unit(benchmark::kMillisecond);
-
-// BENCHMARK_SORT_IMPL(CudaMpiSnpSort, createCudaMpiSnpSimulator, 100, 100, FEW_UNIQUE)
-// BENCHMARK_REGISTER_F(SortBenchmarkFixture, CudaMpiSnpSort_100_100_FEW_UNIQUE)->Unit(benchmark::kMillisecond);
-
-// BENCHMARK_SORT_IMPL(CudaMpiSnpSort, createCudaMpiSnpSimulator, 100, 100, UNIFORM)
-// BENCHMARK_REGISTER_F(SortBenchmarkFixture, CudaMpiSnpSort_100_100_UNIFORM)->Unit(benchmark::kMillisecond);
-
-// // Medium inputs (only for distributed implementations)
-// BENCHMARK_SORT_IMPL(NaiveCudaMpiSnpSort, createNaiveCudaMpiSnpSimulator, 500, 100, RANDOM)
-// BENCHMARK_REGISTER_F(SortBenchmarkFixture, NaiveCudaMpiSnpSort_500_100_RANDOM)->Unit(benchmark::kMillisecond);
-
-// BENCHMARK_SORT_IMPL(CudaMpiSnpSort, createCudaMpiSnpSimulator, 500, 100, RANDOM)
-// BENCHMARK_REGISTER_F(SortBenchmarkFixture, CudaMpiSnpSort_500_100_RANDOM)->Unit(benchmark::kMillisecond);
-
-// BENCHMARK_SORT_IMPL(NaiveCudaMpiSnpSort, createNaiveCudaMpiSnpSimulator, 1000, 1000, RANDOM)
-// BENCHMARK_REGISTER_F(SortBenchmarkFixture, NaiveCudaMpiSnpSort_1000_1000_RANDOM)->Unit(benchmark::kMillisecond);
-
-// BENCHMARK_SORT_IMPL(CudaMpiSnpSort, createCudaMpiSnpSimulator, 1000, 1000, RANDOM)
-// BENCHMARK_REGISTER_F(SortBenchmarkFixture, CudaMpiSnpSort_1000_1000_RANDOM)->Unit(benchmark::kMillisecond);
+BENCHMARK_SORT_IMPL(CudaMpiSnpSort, createCudaMpiSnpSimulator, 5000, 5000, RANDOM)
+BENCHMARK_REGISTER_F(SortBenchmarkFixture, CudaMpiSnpSort_5000_5000_RANDOM)->Unit(benchmark::kMillisecond);
 
 // ============================================================================
 // Main Function with MPI Support
