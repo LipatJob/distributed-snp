@@ -285,7 +285,7 @@ public:
             state.PauseTiming(); \
             \
             /* Extract results and verify correctness */ \
-            std::vector<int> localState = simulator->getLocalState(); \
+            std::vector<int> localState = simulator->getGlobalState(); \
             std::vector<int> result; \
             int N = Size; \
             int startOutput = 2 * N; \

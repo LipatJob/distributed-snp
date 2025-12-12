@@ -93,7 +93,7 @@ public:
         }
     }
     
-    std::vector<int> getLocalState() const override {
+    std::vector<int> getGlobalState() const override {
         return configuration;
     }
     

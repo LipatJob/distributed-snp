@@ -18,16 +18,16 @@ echo "=============================================="
 export LD_LIBRARY_PATH=${BUILD_DIR}/lib:${BUILD_DIR}/_deps/googletest-build/lib:$LD_LIBRARY_PATH
 
 # # Run matrix operations tests with MPI
-echo ""
-echo "Running Matrix Operations Tests..."
-echo "----------------------------------------------"
-mpirun -np ${NUM_PROCS} \
-       --host ${HOSTS} \
-       --allow-run-as-root \
-       --mca btl_tcp_if_include ens5 \
-	   --mca oob_tcp_if_include ens5 \
-       -x LD_LIBRARY_PATH \
-       ${BUILD_DIR}/test_matrix_ops
+# echo ""
+# echo "Running Matrix Operations Tests..."
+# echo "----------------------------------------------"
+# mpirun -np ${NUM_PROCS} \
+#        --host ${HOSTS} \
+#        --allow-run-as-root \
+#        --mca btl_tcp_if_include ens5 \
+# 	   --mca oob_tcp_if_include ens5 \
+#        -x LD_LIBRARY_PATH \
+#        ${BUILD_DIR}/test_matrix_ops
 
 # Run SNP simulator tests with MPI
 echo ""

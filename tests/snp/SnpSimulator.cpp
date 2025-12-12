@@ -6,7 +6,6 @@
 enum class SimulatorBackend {
     NAIVE_CPU,
     CUDA,
-    NAIVE_CUDA_MPI,
     CUDA_MPI
 };
 
@@ -17,10 +16,8 @@ std::unique_ptr<ISnpSimulator> createSimulator(SimulatorBackend backend) {
             return createNaiveCpuSimulator();
         case SimulatorBackend::CUDA:
             return createCudaSimulator();
-        // case SimulatorBackend::NAIVE_CUDA_MPI:
-        //     return createNaiveCudaMpiSimulator();
-        // case SimulatorBackend::CUDA_MPI:
-        //     return createCudaMpiSimulator();
+        case SimulatorBackend::CUDA_MPI:
+            return createCudaMpiSimulator();
         default:
             return nullptr;
     }
@@ -60,19 +57,19 @@ TEST_P(SnpSimulatorTest, OneSpikeChain) {
     ASSERT_TRUE(s->loadSystem(config));
 
     // T=0: [1, 0, 0, 0]
-    EXPECT_EQ(s->getLocalState(), std::vector<int>({1, 0, 0, 0}));
+    EXPECT_EQ(s->getGlobalState(), std::vector<int>({1, 0, 0, 0}));
 
     // T=1: Spike moves 0->1
     s->step(); 
-    EXPECT_EQ(s->getLocalState(), std::vector<int>({0, 1, 0, 0}));
+    EXPECT_EQ(s->getGlobalState(), std::vector<int>({0, 1, 0, 0}));
 
     // T=2: Spike moves 1->2
     s->step();
-    EXPECT_EQ(s->getLocalState(), std::vector<int>({0, 0, 1, 0}));
+    EXPECT_EQ(s->getGlobalState(), std::vector<int>({0, 0, 1, 0}));
 
     // T=3: Spike moves 2->3
     s->step();
-    EXPECT_EQ(s->getLocalState(), std::vector<int>({0, 0, 0, 1}));
+    EXPECT_EQ(s->getGlobalState(), std::vector<int>({0, 0, 0, 1}));
 }
 
 /**
@@ -92,7 +89,7 @@ TEST_P(SnpSimulatorTest, ConsumptionLeavesRemainder) {
     s->loadSystem(config);
     s->step();
 
-    auto state = s->getLocalState();
+    auto state = s->getGlobalState();
     EXPECT_EQ(state[0], 3); // 5 - 2 = 3
     EXPECT_EQ(state[1], 1); // Received 1
 }
@@ -115,15 +112,15 @@ TEST_P(SnpSimulatorTest, RuleDelaySuspendsOutput) {
 
     // T=0: Rule fires, neuron closes, spike is scheduled
     s->step(); 
-    EXPECT_EQ(s->getLocalState()[1], 0); // Not arrived yet
+    EXPECT_EQ(s->getGlobalState()[1], 0); // Not arrived yet
 
     // T=1: Delay tick 1
     s->step(); 
-    EXPECT_EQ(s->getLocalState()[1], 0); // Still waiting
+    EXPECT_EQ(s->getGlobalState()[1], 0); // Still waiting
 
     // T=2: Delay tick 2 (Spike arrives at end of step/start of next)
     s->step(); 
-    EXPECT_EQ(s->getLocalState()[1], 1); // Arrived!
+    EXPECT_EQ(s->getGlobalState()[1], 1); // Arrived!
 }
 
 /**
@@ -142,24 +139,22 @@ TEST_P(SnpSimulatorTest, WeightedSynapseMultipliesSpikes) {
     s->loadSystem(config);
     s->step();
 
-    EXPECT_EQ(s->getLocalState()[1], 10);
+    EXPECT_EQ(s->getGlobalState()[1], 10);
 }
 
 INSTANTIATE_TEST_SUITE_P(
     AllBackends,
     SnpSimulatorTest,
     ::testing::Values(
-        SimulatorBackend::NAIVE_CPU,
-        SimulatorBackend::CUDA
-        // SimulatorBackend::NAIVE_CUDA_MPI,
-        // SimulatorBackend::CUDA_MPI
+        // SimulatorBackend::NAIVE_CPU,
+        // SimulatorBackend::CUDA,
+        SimulatorBackend::CUDA_MPI
     ),
     [](const ::testing::TestParamInfo<SimulatorBackend>& info) {
         switch (info.param) {
             case SimulatorBackend::NAIVE_CPU: return "NaiveCPU";
             case SimulatorBackend::CUDA: return "CUDA";
-            // case SimulatorBackend::NAIVE_CUDA_MPI: return "NaiveCudaMPI";
-            // case SimulatorBackend::CUDA_MPI: return "CudaMPI";
+            case SimulatorBackend::CUDA_MPI: return "CudaMPI";
             default: return "Unknown";
         }
     }

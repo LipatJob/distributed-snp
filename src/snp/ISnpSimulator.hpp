@@ -36,10 +36,10 @@ public:
     virtual void step(int steps = 1) = 0;
 
     /**
-     * @brief Retrieves the current spike count of local neurons.
-     * * @return std::vector<int> Local partition of the configuration vector C.
+     * @brief Retrieves the current spike count of all neurons in the system.
+     * * @return std::vector<int> Current global configuration vector C(k).
      */
-    virtual std::vector<int> getLocalState() const = 0;
+    virtual std::vector<int> getGlobalState() const = 0;
 
     /**
      * @brief Resets the system to the initial configuration (C0).

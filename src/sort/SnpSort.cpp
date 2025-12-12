@@ -116,7 +116,7 @@ private:
         simulator->step(ticks);
 
         // --- E. Collect Results ---
-        std::vector<int> localState = simulator->getLocalState();
+        std::vector<int> localState = simulator->getGlobalState();
         std::vector<int> result;
         
         // Extract output neuron values
@@ -138,12 +138,12 @@ std::unique_ptr<ISort> createNaiveCpuSnpSort() {
     return std::make_unique<SnpSort>(createNaiveCpuSimulator());
 }
 
-// // Factory function to create SnpSort with CUDA/MPI simulator
-// std::unique_ptr<ISort> createCudaMpiSnpSort() {
-//     return std::make_unique<SnpSort>(createCudaMpiSimulator());
-// }
+// Factory function to create SnpSort with CUDA simulator
+std::unique_ptr<ISort> createCudaSnpSort() {
+    return std::make_unique<SnpSort>(createCudaSimulator());
+}
 
-// std::unique_ptr<ISort> createNaiveCudaMpiSnpSort() {
-//     return std::make_unique<SnpSort>(createNaiveCudaMpiSimulator());
-// }
-
+// Factory function to create SnpSort with CUDA/MPI simulator
+std::unique_ptr<ISort> createCudaMpiSnpSort() {
+    return std::make_unique<SnpSort>(createCudaMpiSimulator());
+}

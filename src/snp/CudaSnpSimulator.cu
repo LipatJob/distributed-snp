@@ -130,7 +130,7 @@ struct DeviceSynapseData {
  * 
  * Memory access pattern: Each thread accesses its own index (coalesced)
  */
-__global__ void updateNeuronStatusKernel(
+static __global__ void updateNeuronStatusKernel(
     DeviceNeuronData neurons
 ) {
     int neuron_id = blockIdx.x * blockDim.x + threadIdx.x;
@@ -158,7 +158,7 @@ __global__ void updateNeuronStatusKernel(
  * 
  * Optimization: Minimize branch divergence by early exit for closed neurons
  */
-__global__ void selectAndApplyRulesKernel(
+static __global__ void selectAndApplyRulesKernel(
     DeviceNeuronData neurons,
     DeviceRuleData rules
 ) {
@@ -211,7 +211,7 @@ __global__ void selectAndApplyRulesKernel(
  * 
  * Only propagates when source neuron is open (delay has expired).
  */
-__global__ void propagatePendingEmissionsKernel(
+static __global__ void propagatePendingEmissionsKernel(
     DeviceNeuronData neurons,
     DeviceSynapseData synapses
 ) {
@@ -239,7 +239,7 @@ __global__ void propagatePendingEmissionsKernel(
  * 
  * Only clears if the neuron is open (meaning the pending emission was just propagated).
  */
-__global__ void clearPendingEmissionsKernel(DeviceNeuronData neurons) {
+static __global__ void clearPendingEmissionsKernel(DeviceNeuronData neurons) {
     int neuron_id = blockIdx.x * blockDim.x + threadIdx.x;
     
     if (neuron_id >= neurons.num_neurons) return;
@@ -256,7 +256,7 @@ __global__ void clearPendingEmissionsKernel(DeviceNeuronData neurons) {
  * Each thread handles one synapse.
  * Uses atomicAdd for safe concurrent writes to destination neurons.
  */
-__global__ void propagateImmediateSpikesKernel(
+static __global__ void propagateImmediateSpikesKernel(
     DeviceNeuronData neurons,
     DeviceSynapseData synapses
 ) {
@@ -282,7 +282,7 @@ __global__ void propagateImmediateSpikesKernel(
 /**
  * @brief CUDA Kernel: Clear spike production buffer
  */
-__global__ void clearSpikeProductionKernel(DeviceNeuronData neurons) {
+static __global__ void clearSpikeProductionKernel(DeviceNeuronData neurons) {
     int neuron_id = blockIdx.x * blockDim.x + threadIdx.x;
     
     if (neuron_id >= neurons.num_neurons) return;
@@ -293,7 +293,7 @@ __global__ void clearSpikeProductionKernel(DeviceNeuronData neurons) {
 /**
  * @brief CUDA Kernel: Reset neurons to initial state
  */
-__global__ void resetNeuronsKernel(DeviceNeuronData neurons) {
+static __global__ void resetNeuronsKernel(DeviceNeuronData neurons) {
     int neuron_id = blockIdx.x * blockDim.x + threadIdx.x;
     
     if (neuron_id >= neurons.num_neurons) return;
@@ -392,7 +392,7 @@ public:
         }
     }
     
-    std::vector<int> getLocalState() const override {
+    std::vector<int> getGlobalState() const override {
         std::vector<int> state(num_neurons);
         
         auto start = std::chrono::high_resolution_clock::now();
