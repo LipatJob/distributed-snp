@@ -84,7 +84,9 @@ add_library(snp_system STATIC
     src/snp/SnpSystemConfig.hpp
     src/snp/ISnpSimulator.hpp
     src/snp/NaiveCpuSnpSimulator.cpp
+    src/snp/NaiveCudaMpiSnpSimulator.cu
     src/snp/CudaMpiSnpSimulator.cu
+    
 )
 set_target_properties(snp_system PROPERTIES
     CUDA_SEPARABLE_COMPILATION ON
@@ -144,11 +146,20 @@ if(BUILD_TESTS)
         include(FetchContent)
         FetchContent_Declare(
             googletest
-            GIT_REPOSITORY https://github.com/google/googletest.git
-            GIT_TAG release-1.12.1
+            URL https://github.com/google/googletest/archive/refs/tags/v1.17.0.zip
         )
         FetchContent_MakeAvailable(googletest)
     endif()
+
+    # Download and build Google Benchmark
+    include(FetchContent)
+    set(BENCHMARK_ENABLE_TESTING OFF CACHE BOOL "Enable testing of the benchmark library.")
+    set(BENCHMARK_ENABLE_INSTALL OFF CACHE BOOL "Enable installation of benchmark.")
+    FetchContent_Declare(
+        googlebenchmark
+        URL https://github.com/google/benchmark/archive/refs/tags/v1.8.3.zip
+    )
+    FetchContent_MakeAvailable(googlebenchmark)
 
     enable_testing()
 
@@ -204,6 +215,28 @@ if(BUILD_TESTS)
     add_test(NAME SnpSortTest
              COMMAND ${MPIEXEC_EXECUTABLE} ${MPIEXEC_NUMPROC_FLAG} 2 --host localhost,10.0.0.2
                      ${MPIEXEC_PREFLAGS} $<TARGET_FILE:test_sort> ${MPIEXEC_POSTFLAGS} --allow-run-as-root --oversubscribe)
+    
+    # ============================================================================
+    # Benchmarks
+    # ============================================================================
+    
+    # Sort Benchmark
+    add_executable(sort_benchmark
+        benchmark/SortBenchmark.cpp
+    )
+    
+    target_link_libraries(sort_benchmark PRIVATE
+        snp_sort
+        snp_system
+        benchmark::benchmark
+        benchmark::benchmark_main
+        MPI::MPI_CXX
+    )
+    
+    # Install benchmark executable
+    install(TARGETS sort_benchmark
+        RUNTIME DESTINATION bin
+    )
 endif()
 
 # ============================================================================

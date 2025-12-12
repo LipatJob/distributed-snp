@@ -1,4 +1,3 @@
-#include <vector>
 #include <memory>
 
 /**
@@ -21,4 +20,5 @@ public:
 };
 
 std::unique_ptr<ISort> createSnpSort();
-std::unique_ptr<ISort> createSnpSortCudaMpi();
+std::unique_ptr<ISort> createCudaMpiSnpSort();
+std::unique_ptr<ISort> createNaiveCudaMpiSnpSort();

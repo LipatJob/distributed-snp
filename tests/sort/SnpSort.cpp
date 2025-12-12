@@ -1,8 +1,6 @@
 #include <mpi.h>
 #include <gtest/gtest.h>
 #include "ISort.hpp"
-#include <vector>
-#include <algorithm>
 
 // Test fixture for SnpSort tests
 class SnpSortTest : public ::testing::Test {
@@ -10,7 +8,7 @@ protected:
     std::unique_ptr<ISort> sorter;
     
     void SetUp() override {
-        sorter = createSnpSortCudaMpi();
+        sorter = createCudaMpiSnpSort();
     }
 };
 

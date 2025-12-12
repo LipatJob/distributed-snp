@@ -1,7 +1,6 @@
 #include "ISort.hpp"
 #include "../snp/ISnpSimulator.hpp"
 #include "../snp/SnpSystemConfig.hpp"
-#include <algorithm>
 #include <iostream>
 
 class SnpSort : public ISort {
@@ -140,7 +139,11 @@ std::unique_ptr<ISort> createSnpSort() {
 }
 
 // Factory function to create SnpSort with CUDA/MPI simulator
-std::unique_ptr<ISort> createSnpSortCudaMpi() {
+std::unique_ptr<ISort> createCudaMpiSnpSort() {
     return std::make_unique<SnpSort>(createCudaMpiSimulator());
+}
+
+std::unique_ptr<ISort> createNaiveCudaMpiSnpSort() {
+    return std::make_unique<SnpSort>(createNaiveCudaMpiSimulator());
 }
 
