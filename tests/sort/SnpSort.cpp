@@ -2,32 +2,52 @@
 #include <gtest/gtest.h>
 #include "ISort.hpp"
 
+enum class SortBackend {
+    SNP_SORT,
+    CUDA_MPI_SNP_SORT,
+    NAIVE_CUDA_MPI_SNP_SORT
+};
+
+// Factory wrapper for different backends
+std::unique_ptr<ISort> createSorter(SortBackend backend) {
+    switch (backend) {
+        case SortBackend::SNP_SORT:
+            return createSnpSort();
+        case SortBackend::CUDA_MPI_SNP_SORT:
+            return createCudaMpiSnpSort();
+        // case SortBackend::NAIVE_CUDA_MPI_SNP_SORT:
+        //     return createNaiveCudaMpiSnpSort();
+        default:
+            return nullptr;
+    }
+}
+
 // Test fixture for SnpSort tests
-class SnpSortTest : public ::testing::Test {
+class SnpSortTest : public ::testing::TestWithParam<SortBackend> {
 protected:
     std::unique_ptr<ISort> sorter;
     
     void SetUp() override {
-        sorter = createCudaMpiSnpSort();
+        sorter = createSorter(GetParam());
     }
 };
 
 // Test sorting an empty array
-TEST_F(SnpSortTest, SortEmptyArray) {
+TEST_P(SnpSortTest, SortEmptyArray) {
     int data[] = {};
     sorter->sort(data, 0);
     SUCCEED();
 }
 
 // Test sorting a single element
-TEST_F(SnpSortTest, SortSingleElement) {
+TEST_P(SnpSortTest, SortSingleElement) {
     int data[] = {42};
     sorter->sort(data, 1);
     EXPECT_EQ(data[0], 42);
 }
 
 // Test sorting two elements
-TEST_F(SnpSortTest, SortTwoElements) {
+TEST_P(SnpSortTest, SortTwoElements) {
     int data[] = {5, 3};
     sorter->sort(data, 2);
     EXPECT_EQ(data[0], 3);
@@ -35,7 +55,7 @@ TEST_F(SnpSortTest, SortTwoElements) {
 }
 
 // Test sorting already sorted array
-TEST_F(SnpSortTest, SortAlreadySorted) {
+TEST_P(SnpSortTest, SortAlreadySorted) {
     int data[] = {1, 2, 3, 4, 5};
     size_t size = 5;
     
@@ -47,7 +67,7 @@ TEST_F(SnpSortTest, SortAlreadySorted) {
 }
 
 // Test sorting reverse sorted array
-TEST_F(SnpSortTest, SortReverseSorted) {
+TEST_P(SnpSortTest, SortReverseSorted) {
     int data[] = {5, 4, 3, 2, 1};
     size_t size = 5;
     
@@ -59,7 +79,7 @@ TEST_F(SnpSortTest, SortReverseSorted) {
 }
 
 // Test sorting array with duplicates
-TEST_F(SnpSortTest, SortWithDuplicates) {
+TEST_P(SnpSortTest, SortWithDuplicates) {
     int data[] = {3, 1, 4, 1, 5, 9, 2, 6, 5, 3};
     size_t size = 10;
     
@@ -72,7 +92,7 @@ TEST_F(SnpSortTest, SortWithDuplicates) {
 }
 
 // Test sorting small random array
-TEST_F(SnpSortTest, SortSmallRandom) {
+TEST_P(SnpSortTest, SortSmallRandom) {
     int data[] = {7, 2, 9, 1, 5, 3};
     int expected[] = {1, 2, 3, 5, 7, 9};
     size_t size = 6;
@@ -85,7 +105,7 @@ TEST_F(SnpSortTest, SortSmallRandom) {
 }
 
 // Test sorting array with all same values
-TEST_F(SnpSortTest, SortAllSame) {
+TEST_P(SnpSortTest, SortAllSame) {
     int data[] = {5, 5, 5, 5, 5};
     size_t size = 5;
     
@@ -97,7 +117,7 @@ TEST_F(SnpSortTest, SortAllSame) {
 }
 
 // Test sorting array with zeros
-TEST_F(SnpSortTest, SortWithZeros) {
+TEST_P(SnpSortTest, SortWithZeros) {
     int data[] = {3, 0, 2, 0, 1};
     int expected[] = {0, 0, 1, 2, 3};
     size_t size = 5;
@@ -110,7 +130,7 @@ TEST_F(SnpSortTest, SortWithZeros) {
 }
 
 // Performance test with medium-sized array
-TEST_F(SnpSortTest, SortMediumArray) {
+TEST_P(SnpSortTest, SortMediumArray) {
     const size_t size = 20;
     std::vector<int> data(size);
     
@@ -126,6 +146,24 @@ TEST_F(SnpSortTest, SortMediumArray) {
         EXPECT_EQ(data[i], i + 1);
     }
 }
+
+INSTANTIATE_TEST_SUITE_P(
+    AllBackends,
+    SnpSortTest,
+    ::testing::Values(
+        SortBackend::SNP_SORT,
+        SortBackend::CUDA_MPI_SNP_SORT
+        // SortBackend::NAIVE_CUDA_MPI_SNP_SORT
+    ),
+    [](const ::testing::TestParamInfo<SortBackend>& info) {
+        switch (info.param) {
+            case SortBackend::SNP_SORT: return "SnpSort";
+            case SortBackend::CUDA_MPI_SNP_SORT: return "CudaMpiSnpSort";
+            // case SortBackend::NAIVE_CUDA_MPI_SNP_SORT: return "NaiveCudaMpiSnpSort";
+            default: return "Unknown";
+        }
+    }
+);
 
 int main(int argc, char** argv) {
     // 1. Initialize MPI

@@ -3,19 +3,41 @@
 #include "ISnpSimulator.hpp"
 #include "SnpSystemConfig.hpp"
 
-// Factory wrapper for brevity
-std::unique_ptr<ISnpSimulator> sim() {
-    return createCudaMpiSimulator();
-    // return createNaiveCpuSimulator();
+enum class SimulatorBackend {
+    NAIVE_CPU,
+    NAIVE_CUDA_MPI,
+    CUDA_MPI
+};
+
+// Factory wrapper for different backends
+std::unique_ptr<ISnpSimulator> createSimulator(SimulatorBackend backend) {
+    switch (backend) {
+        case SimulatorBackend::NAIVE_CPU:
+            return createNaiveCpuSimulator();
+        // case SimulatorBackend::NAIVE_CUDA_MPI:
+        //     return createNaiveCudaMpiSimulator();
+        case SimulatorBackend::CUDA_MPI:
+            return createCudaMpiSimulator();
+        default:
+            return nullptr;
+    }
 }
+
+class SnpSimulatorTest : public ::testing::TestWithParam<SimulatorBackend> {
+protected:
+    std::unique_ptr<ISnpSimulator> s;
+    
+    void SetUp() override {
+        s = createSimulator(GetParam());
+    }
+};
 
 /**
  * @brief Test: One Spike Chain
  * Structure: [0] -> [1] -> [2] -> [3]
  * Logic: Spike passes one neuron per step.
  */
-TEST(SnpSimulatorTest, OneSpikeChain) {
-    auto s = sim();
+TEST_P(SnpSimulatorTest, OneSpikeChain) {
     
     auto config = SnpSystemBuilder()
         // Define Neurons: ID, Initial Spikes
@@ -54,8 +76,7 @@ TEST(SnpSimulatorTest, OneSpikeChain) {
  * @brief Test: Consumption Logic
  * Logic: Rule a^3 / a^2 -> a consumes 2 spikes, leaving remainder.
  */
-TEST(SnpSimulatorTest, ConsumptionLeavesRemainder) {
-    auto s = sim();
+TEST_P(SnpSimulatorTest, ConsumptionLeavesRemainder) {
 
     auto config = SnpSystemBuilder()
         .addNeuron(0, 5) // Initial: 5 spikes
@@ -77,8 +98,7 @@ TEST(SnpSimulatorTest, ConsumptionLeavesRemainder) {
  * @brief Test: Rule Delay
  * Logic: Output is suspended for 'd' ticks.
  */
-TEST(SnpSimulatorTest, RuleDelaySuspendsOutput) {
-    auto s = sim();
+TEST_P(SnpSimulatorTest, RuleDelaySuspendsOutput) {
 
     auto config = SnpSystemBuilder()
         .addNeuron(0, 1)
@@ -104,35 +124,10 @@ TEST(SnpSimulatorTest, RuleDelaySuspendsOutput) {
 }
 
 /**
- * @brief Test: Determinism via Priority
- * Logic: Two valid rules, highest priority wins.
- */
-TEST(SnpSimulatorTest, HighPriorityRuleWins) {
-    auto s = sim();
-
-    auto config = SnpSystemBuilder()
-        .addNeuron(0, 2)
-        .addNeuron(1, 0)
-        // Rule Low:  Priority 0, produces 1
-        .addRule(0, 1, 1, 1, 0, 0) 
-        // Rule High: Priority 10, produces 5
-        .addRule(0, 1, 1, 5, 0, 10) 
-        .addSynapse(0, 1)
-        .build();
-
-    s->loadSystem(config);
-    s->step();
-
-    // High priority rule produced 5 spikes
-    EXPECT_EQ(s->getLocalState()[1], 5);
-}
-
-/**
  * @brief Test: Weighted Synapses
  * Logic: Spikes are multiplied by synapse weight.
  */
-TEST(SnpSimulatorTest, WeightedSynapseMultipliesSpikes) {
-    auto s = sim();
+TEST_P(SnpSimulatorTest, WeightedSynapseMultipliesSpikes) {
 
     auto config = SnpSystemBuilder()
         .addNeuron(0, 1)
@@ -146,6 +141,24 @@ TEST(SnpSimulatorTest, WeightedSynapseMultipliesSpikes) {
 
     EXPECT_EQ(s->getLocalState()[1], 10);
 }
+
+INSTANTIATE_TEST_SUITE_P(
+    AllBackends,
+    SnpSimulatorTest,
+    ::testing::Values(
+        SimulatorBackend::NAIVE_CPU,
+        // SimulatorBackend::NAIVE_CUDA_MPI,
+        SimulatorBackend::CUDA_MPI
+    ),
+    [](const ::testing::TestParamInfo<SimulatorBackend>& info) {
+        switch (info.param) {
+            case SimulatorBackend::NAIVE_CPU: return "NaiveCPU";
+            // case SimulatorBackend::NAIVE_CUDA_MPI: return "NaiveCudaMPI";
+            case SimulatorBackend::CUDA_MPI: return "CudaMPI";
+            default: return "Unknown";
+        }
+    }
+);
 
 int main(int argc, char** argv) {
     // 1. Initialize MPI

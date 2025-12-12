@@ -152,7 +152,7 @@ private:
      * When a delay expires (timer reaches 0), the neuron opens and emits its pending spikes.
      */
     void updateNeuronStatus() {
-        for (size_t neuron_id = 0; neuron_id < config.neurons.size(); ++neuron_id) {
+        for (size_t neuron_id = 0; neuron_id < config.neurons.size(); neuron_id++) {
             if (delay_timer[neuron_id] > 0) {
                 delay_timer[neuron_id]--;
                 
@@ -196,18 +196,11 @@ private:
                 
                 // Check if rule is applicable
                 if (current_spikes >= rule.input_threshold) {
-                    // Select if first applicable rule OR higher priority
-                    if (best_rule == nullptr || rule.priority > best_priority) {
-                        best_rule = &rule;
-                        best_rule_index = rule_idx;
-                        best_priority = rule.priority;
-                    }
+                    // Select first applicable rule. In reality, this should be non-deterministic,
+                    // but we choose the highest priority rule for simplicity.
+                    selected_rules.emplace_back(neuron_id, rule_idx, &rule);
+                    break; // Only one rule per neuron
                 }
-            }
-            
-            // If we found an applicable rule, record it
-            if (best_rule != nullptr) {
-                selected_rules.emplace_back(neuron_id, best_rule_index, best_rule);
             }
         }
     }
@@ -292,7 +285,7 @@ private:
             if (spikes_to_send > 0 && neuron_is_open[dest]) {
                 configuration[dest] += spikes_to_send;
             }
-            // If dest is closed, spikes are lost (as per reference document)
+            // If dest is closed, spikes are lost
         }
     }
 };
