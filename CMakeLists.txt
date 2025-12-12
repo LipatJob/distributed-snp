@@ -81,17 +81,25 @@ target_link_libraries(matrix_ops INTERFACE
 # ============================================================================
 
 add_library(snp_system STATIC
-    src/snp/CpuSnpSimulator.cpp
-    src/snp/NaiveSnpSimulator.cu
-    src/snp/SnpSimulator.cu
+    src/snp/SnpSystemConfig.hpp
+    src/snp/ISnpSimulator.hpp
+    src/snp/NaiveCpuSnpSimulator.cpp
+    src/snp/CudaMpiSnpSimulator.cu
+)
+set_target_properties(snp_system PROPERTIES
+    CUDA_SEPARABLE_COMPILATION ON
+    CUDA_RESOLVE_DEVICE_SYMBOLS ON
+    CUDA_ARCHITECTURES "75"  # Adjust based on your GPU architecture
 )
 target_link_libraries(snp_system PUBLIC
     matrix_ops
     MPI::MPI_CXX
+    CUDA::cudart
 )
 target_include_directories(snp_system PUBLIC
     ${PROJECT_SOURCE_DIR}/src/snp
     ${PROJECT_SOURCE_DIR}/src/linear_algebra
+    ${MPI_CXX_INCLUDE_DIRS}
 )
 
 # ============================================================================
