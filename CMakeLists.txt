@@ -84,8 +84,7 @@ add_library(snp_system STATIC
     src/snp/SnpSystemConfig.hpp
     src/snp/ISnpSimulator.hpp
     src/snp/NaiveCpuSnpSimulator.cpp
-    src/snp/NaiveCudaMpiSnpSimulator.cu
-    src/snp/CudaMpiSnpSimulator.cu
+    src/snp/CudaSnpSimulator.cu
     
 )
 set_target_properties(snp_system PROPERTIES

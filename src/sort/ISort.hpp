@@ -19,6 +19,6 @@ public:
     virtual void sort(int* data, size_t size) = 0;
 };
 
-std::unique_ptr<ISort> createSnpSort();
+std::unique_ptr<ISort> createNaiveCpuSnpSort();
 std::unique_ptr<ISort> createCudaMpiSnpSort();
 std::unique_ptr<ISort> createNaiveCudaMpiSnpSort();

@@ -73,8 +73,8 @@ private:
             // Reset neuron with initial spikes
             builder.addNeuron(neuronId, spikes);
             
-            // Stream rule: consume 1, produce 1, no delay, priority 1
-            builder.addRule(neuronId, 1, 1, 1, 0, 1);
+            // Stream rule: consume 1, produce 1, no delay
+            builder.addRule(neuronId, 1, 1, 1, 0);
         }
 
         // Sorters (Neurons N to 2N-1)
@@ -84,18 +84,18 @@ private:
 
             // 1. Forget High (Higher priority - processed first)
             for(int k = N; k > target; --k) {
-                // threshold=k, consume=k, produce=0, delay=0, priority=k (greedy)
-                builder.addRule(sorterID, k, k, 0, 0, k);
+                // threshold=k, consume=k, produce=0, delay=0
+                builder.addRule(sorterID, k, k, 0, 0);
             }
             
             // 2. Fire Exact (at target count)
             // threshold=target, consume=target, produce=1, delay=0, priority=target
-            builder.addRule(sorterID, target, target, 1, 0, target);
+            builder.addRule(sorterID, target, target, 1, 0);
 
             // 3. Forget Low (Lower priority)
             for(int k = target - 1; k >= 1; --k) {
-                // threshold=k, consume=k, produce=0, delay=0, priority=k
-                builder.addRule(sorterID, k, k, 0, 0, k);
+                // threshold=k, consume=k, produce=0, delay=0
+                builder.addRule(sorterID, k, k, 0, 0);
             }
         }
 
@@ -134,16 +134,16 @@ private:
 };
 
 // Factory function to create SnpSort with CPU simulator
-std::unique_ptr<ISort> createSnpSort() {
+std::unique_ptr<ISort> createNaiveCpuSnpSort() {
     return std::make_unique<SnpSort>(createNaiveCpuSimulator());
 }
 
-// Factory function to create SnpSort with CUDA/MPI simulator
-std::unique_ptr<ISort> createCudaMpiSnpSort() {
-    return std::make_unique<SnpSort>(createCudaMpiSimulator());
-}
+// // Factory function to create SnpSort with CUDA/MPI simulator
+// std::unique_ptr<ISort> createCudaMpiSnpSort() {
+//     return std::make_unique<SnpSort>(createCudaMpiSimulator());
+// }
 
-std::unique_ptr<ISort> createNaiveCudaMpiSnpSort() {
-    return std::make_unique<SnpSort>(createNaiveCudaMpiSimulator());
-}
+// std::unique_ptr<ISort> createNaiveCudaMpiSnpSort() {
+//     return std::make_unique<SnpSort>(createNaiveCudaMpiSimulator());
+// }
 

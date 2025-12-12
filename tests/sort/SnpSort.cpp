@@ -3,7 +3,7 @@
 #include "ISort.hpp"
 
 enum class SortBackend {
-    SNP_SORT,
+    NAIVE_CPU_SNP_SORT,
     CUDA_MPI_SNP_SORT,
     NAIVE_CUDA_MPI_SNP_SORT
 };
@@ -11,10 +11,10 @@ enum class SortBackend {
 // Factory wrapper for different backends
 std::unique_ptr<ISort> createSorter(SortBackend backend) {
     switch (backend) {
-        case SortBackend::SNP_SORT:
-            return createSnpSort();
-        case SortBackend::CUDA_MPI_SNP_SORT:
-            return createCudaMpiSnpSort();
+        case SortBackend::NAIVE_CPU_SNP_SORT:
+            return createNaiveCpuSnpSort();
+        // case SortBackend::CUDA_MPI_SNP_SORT:
+            // return createCudaMpiSnpSort();
         // case SortBackend::NAIVE_CUDA_MPI_SNP_SORT:
         //     return createNaiveCudaMpiSnpSort();
         default:
@@ -151,19 +151,20 @@ INSTANTIATE_TEST_SUITE_P(
     AllBackends,
     SnpSortTest,
     ::testing::Values(
-        SortBackend::SNP_SORT,
-        SortBackend::CUDA_MPI_SNP_SORT
+        SortBackend::NAIVE_CPU_SNP_SORT
+        // SortBackend::CUDA_MPI_SNP_SORT
         // SortBackend::NAIVE_CUDA_MPI_SNP_SORT
     ),
     [](const ::testing::TestParamInfo<SortBackend>& info) {
         switch (info.param) {
-            case SortBackend::SNP_SORT: return "SnpSort";
-            case SortBackend::CUDA_MPI_SNP_SORT: return "CudaMpiSnpSort";
+            case SortBackend::NAIVE_CPU_SNP_SORT: return "NaiveCpuSnpSort";
+            // case SortBackend::CUDA_MPI_SNP_SORT: return "CudaMpiSnpSort";
             // case SortBackend::NAIVE_CUDA_MPI_SNP_SORT: return "NaiveCudaMpiSnpSort";
             default: return "Unknown";
         }
     }
 );
+
 
 int main(int argc, char** argv) {
     // 1. Initialize MPI

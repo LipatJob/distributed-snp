@@ -9,15 +9,14 @@ struct SnpRule {
     int spikes_consumed = 0;
     int spikes_produced = 0;
     int delay = 0;
-    int priority = 0;
 
     // RESTORED: Default constructor required for struct usage in vectors/other structs
     SnpRule() = default;
 
     // Convenience Constructor for the Builder/Tests
-    SnpRule(int threshold, int consumed, int produced, int d = 0, int p = 0)
+    SnpRule(int threshold, int consumed, int produced, int d = 0)
         : input_threshold(threshold), spikes_consumed(consumed), 
-          spikes_produced(produced), delay(d), priority(p) {}
+          spikes_produced(produced), delay(d) {}
 };
 
 struct SnpNeuron {
@@ -73,11 +72,11 @@ public:
         return *this;
     }
 
-    SnpSystemBuilder& addRule(int neuron_id, int threshold, int consumed, int produced, int delay = 0, int priority = 0) {
+    SnpSystemBuilder& addRule(int neuron_id, int threshold, int consumed, int produced, int delay = 0) {
         if (config.neurons.size() <= static_cast<size_t>(neuron_id)) {
             addNeuron(neuron_id);
         }
-        config.neurons[neuron_id].rules.emplace_back(threshold, consumed, produced, delay, priority);
+        config.neurons[neuron_id].rules.emplace_back(threshold, consumed, produced, delay);
         return *this;
     }
 

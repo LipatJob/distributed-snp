@@ -2,7 +2,6 @@
 #include "SnpSystemConfig.hpp"
 #include <vector>
 #include <memory>
-#include <algorithm>
 #include <sstream>
 #include <chrono>
 
@@ -13,7 +12,7 @@
  * It follows the mathematical model described in the reference document:
  * - Configuration Vector C(k): spike counts per neuron
  * - Status Vector St(k): open/closed state per neuron
- * - Firing rules with delays and priorities
+ * - Firing rules with delays
  * 
  * Design Philosophy:
  * - Simple linear search for rule selection
@@ -126,7 +125,7 @@ private:
      * 
      * Algorithm (from reference document):
      * 1. Update neuron status based on delay timers
-     * 2. For each open neuron, select applicable rule (deterministic by priority)
+     * 2. For each open neuron, select applicable rule (deterministic by order)
      * 3. Apply selected rules (consume spikes, schedule production)
      * 4. Propagate spikes through synapses to open neurons
      */
@@ -134,7 +133,7 @@ private:
         // Phase 1: Update neuron open/closed status based on delays
         updateNeuronStatus();
         
-        // Phase 2: Select rules for each open neuron (deterministic by priority)
+        // Phase 2: Select rules for each open neuron (deterministic by order)
         std::vector<RuleReference> selected_rules;
         selectFiringRules(selected_rules);
         
@@ -166,13 +165,12 @@ private:
     }
     
     /**
-     * @brief Select one rule per neuron based on applicability and priority
+     * @brief Select one rule per neuron based on applicability and order
      * 
      * Deterministic Rule Selection (from reference):
      * - Only open neurons can fire rules
      * - A rule is applicable if: current_spikes >= threshold
-     * - If multiple rules applicable, select highest priority (largest priority value)
-     * - Priority ties broken by rule order (first rule wins)
+     * - If multiple rules applicable, the first rule
      */
     void selectFiringRules(std::vector<RuleReference>& selected_rules) {
         selected_rules.clear();
@@ -187,17 +185,12 @@ private:
             int current_spikes = configuration[neuron_id];
             
             // Find applicable rules for this neuron
-            const SnpRule* best_rule = nullptr;
-            int best_rule_index = -1;
-            int best_priority = -1; // Start with invalid priority
-            
             for (size_t rule_idx = 0; rule_idx < neuron.rules.size(); ++rule_idx) {
                 const auto& rule = neuron.rules[rule_idx];
                 
                 // Check if rule is applicable
                 if (current_spikes >= rule.input_threshold) {
-                    // Select first applicable rule. In reality, this should be non-deterministic,
-                    // but we choose the highest priority rule for simplicity.
+                    // For simplicity, select the first applicable rule
                     selected_rules.emplace_back(neuron_id, rule_idx, &rule);
                     break; // Only one rule per neuron
                 }
