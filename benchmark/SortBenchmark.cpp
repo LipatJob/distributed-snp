@@ -254,17 +254,17 @@ int main(int argc, char** argv) {
     // --- REGISTRATION PHASE ---
     // This is where you select which simulators run "by default" or add new ones.
     
-    // 1. CPU
-    RegisterSimulator("CpuSnp", createNaiveCpuSnpSort, Suites::Small);
-    RegisterSimulator("CpuSnp", createNaiveCpuSnpSort, Suites::Medium);
+    // // 1. CPU
+    // RegisterSimulator("CpuSnp", createNaiveCpuSnpSort, Suites::Small);
+    // RegisterSimulator("CpuSnp", createNaiveCpuSnpSort, Suites::Medium);
 
-    // 2. CUDA
-    RegisterSimulator("CudaSnp", createCudaSnpSort, Suites::Small);
-    RegisterSimulator("CudaSnp", createCudaSnpSort, Suites::Medium);
+    // // 2. CUDA
+    // RegisterSimulator("CudaSnp", createCudaSnpSort, Suites::Small);
+    // RegisterSimulator("CudaSnp", createCudaSnpSort, Suites::Medium);
 
-    // 3. Sparse CUDA
-    RegisterSimulator("SparseCudaSnp", createSparseCudaSnpSort, Suites::Small);
-    RegisterSimulator("SparseCudaSnp", createSparseCudaSnpSort, Suites::Medium);
+    // // 3. Sparse CUDA
+    // RegisterSimulator("SparseCudaSnp", createSparseCudaSnpSort, Suites::Small);
+    // RegisterSimulator("SparseCudaSnp", createSparseCudaSnpSort, Suites::Medium);
 
     // 4. Naive CUDA/MPI
     RegisterSimulator("NaiveCudaMpiSnp", createNaiveCudaMpiSnpSort, Suites::Small);

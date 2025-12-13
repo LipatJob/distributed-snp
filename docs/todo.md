@@ -1,5 +1,5 @@
 General
-[ ] Profile GPU kernels
+[ ] Profile SNP Implementations
 [ ] Thoroughly compare sparse and optimized CUDA -> sparseness
 [ ] Presentation
 [ ] Paper
