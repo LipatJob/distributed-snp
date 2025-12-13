@@ -1,19 +1,22 @@
 #pragma once
 
+#include "IPartitioner.hpp"
 #include "SnpSystemConfig.hpp"
 #include <vector>
 #include <map>
 
-class LouvainPartitioner {
+class LouvainPartitioner : public IPartitioner
+{
 public:
-    /**
-     * @brief Partitions the SNP system into k partitions using the Louvain algorithm.
-     * 
-     * @param config The SNP system configuration.
-     * @param num_partitions The desired number of partitions (e.g., MPI size).
-     * @return std::vector<int> A vector of size num_neurons, where index is neuron ID and value is partition ID.
-     */
-    static std::vector<int> partition(const SnpSystemConfig& config, int num_partitions);
+  /**
+   * @brief Partitions the SNP system into k partitions using the Louvain algorithm.
+   */
+  std::vector<int> partition(const SnpSystemConfig &config, int num_partitions) override;
+
+  PartitionerType getType() const override
+  {
+    return PartitionerType::LOUVAIN;
+  }
 
 private:
     struct Graph {

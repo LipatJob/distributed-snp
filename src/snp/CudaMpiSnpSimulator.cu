@@ -1,6 +1,9 @@
 #include "ISnpSimulator.hpp"
 #include "SnpSystemConfig.hpp"
+#include "IPartitioner.hpp"
+#include "LinearPartitioner.hpp"
 #include "LouvainPartitioner.hpp"
+#include "RedBluePartitioner.hpp"
 #include "SnpSystemPermuter.hpp"
 #include <mpi.h>
 #include <cuda_runtime.h>
@@ -361,10 +364,20 @@ private:
     double comm_time = 0.0;
     int steps = 0;
 
+    std::unique_ptr<IPartitioner> partitioner;
+
 public:
     CudaMpiSnpSimulator() {
         MPI_Comm_rank(MPI_COMM_WORLD, &mpi_rank);
         MPI_Comm_size(MPI_COMM_WORLD, &mpi_size);
+        // Default to Linear (Naive) Partitioning
+        partitioner = std::make_unique<LinearPartitioner>();
+    }
+
+    // Allow switching partitioner strategy
+    void setPartitioner(std::unique_ptr<IPartitioner> p)
+    {
+        partitioner = std::move(p);
     }
 
     ~CudaMpiSnpSimulator() {
@@ -379,7 +392,17 @@ public:
 
     bool loadSystem(const SnpSystemConfig& original_config) override {
         // 1. Partition & Permute
-        auto partition = LouvainPartitioner::partition(original_config, mpi_size);
+        if (!partitioner)
+        {
+            partitioner = std::make_unique<LinearPartitioner>();
+        }
+
+        if (mpi_rank == 0)
+        {
+            std::cout << "Partitioning system using: " << IPartitioner::getPartitionerName(partitioner->getType()) << std::endl;
+        }
+
+        auto partition = partitioner->partition(original_config, mpi_size);
         auto perm_result = SnpSystemPermuter::permute(original_config, partition, mpi_size);
         
         // Store mapping for output

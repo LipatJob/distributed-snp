@@ -1,5 +1,10 @@
 #include "ISnpSimulator.hpp"
 #include "SnpSystemConfig.hpp"
+#include "IPartitioner.hpp"
+#include "LinearPartitioner.hpp"
+#include "LouvainPartitioner.hpp"
+#include "RedBluePartitioner.hpp"
+#include "SnpSystemPermuter.hpp"
 #include <mpi.h>
 #include <cuda_runtime.h>
 #include <vector>
@@ -8,6 +13,7 @@
 #include <stdexcept>
 #include <sstream>
 #include <chrono>
+#include <memory>
 
 // --- Macros & Constants ---
 
@@ -276,6 +282,10 @@ private:
     std::vector<int> mpi_recv_counts;
     std::vector<int> mpi_displs;
 
+    // Partitioning & Permutation
+    std::unique_ptr<IPartitioner> partitioner;
+    std::vector<int> new_to_old_map;
+
     // Metrics
     double total_time_ms = 0;
     double mpi_time_ms = 0;
@@ -285,6 +295,13 @@ public:
     NaiveCudaMpiSnpSimulator() {
         MPI_Comm_rank(MPI_COMM_WORLD, &mpi_rank);
         MPI_Comm_size(MPI_COMM_WORLD, &mpi_size);
+        // Default to Linear (Naive) Partitioning
+        partitioner = std::make_unique<LinearPartitioner>();
+    }
+
+    // Allow switching partitioner strategy
+    void setPartitioner(std::unique_ptr<IPartitioner> p) {
+        partitioner = std::move(p);
     }
 
     ~NaiveCudaMpiSnpSimulator() {
@@ -295,34 +312,44 @@ public:
         if (global_num_neurons > 0) cudaFree(d_global_production);
     }
 
-    bool loadSystem(const SnpSystemConfig& config) override {
+    bool loadSystem(const SnpSystemConfig& original_config) override {
+        // 1. Partition & Permute
+        if (!partitioner) {
+            partitioner = std::make_unique<LinearPartitioner>();
+        }
+
+        if (mpi_rank == 0) {
+            std::cout << "Naive Simulator Partitioning using: " << IPartitioner::getPartitionerName(partitioner->getType()) << std::endl;
+        }
+
+        auto partition = partitioner->partition(original_config, mpi_size);
+        auto perm_result = SnpSystemPermuter::permute(original_config, partition, mpi_size);
+        
+        // Store mapping for output
+        new_to_old_map = perm_result.new_to_old;
+        
+        // Use the new config
+        const SnpSystemConfig& config = perm_result.config;
         global_num_neurons = config.neurons.size();
 
-        // 1. Partition Neurons (Simple Block Partition)
-        int base_chunk = global_num_neurons / mpi_size;
-        int remainder = global_num_neurons % mpi_size;
-
-        // Calculate Start/End for this rank
-        my_start_id = mpi_rank * base_chunk + std::min(mpi_rank, remainder);
-        int my_chunk = base_chunk + (mpi_rank < remainder ? 1 : 0);
-        my_end_id = my_start_id + my_chunk;
-        my_neuron_count = my_chunk;
+        // 2. Set Local Range from Permutation Result
+        // The permuter guarantees that partitions are contiguous in the new ID space
+        // Rank i gets [partition_offsets[i], partition_offsets[i] + partition_counts[i])
+        my_start_id = perm_result.partition_offsets[mpi_rank];
+        my_neuron_count = perm_result.partition_counts[mpi_rank];
+        my_end_id = my_start_id + my_neuron_count;
 
         // Prepare MPI Allgatherv arrays
-        mpi_recv_counts.resize(mpi_size);
-        mpi_displs.resize(mpi_size);
+        mpi_recv_counts = perm_result.partition_counts;
         
-        // We need to know everyone's counts for Allgatherv
-        MPI_Allgather(&my_neuron_count, 1, MPI_INT, 
-                      mpi_recv_counts.data(), 1, MPI_INT, MPI_COMM_WORLD);
-
         // Compute displacements
+        mpi_displs.resize(mpi_size);
         mpi_displs[0] = 0;
         for(int i=1; i<mpi_size; i++) {
             mpi_displs[i] = mpi_displs[i-1] + mpi_recv_counts[i-1];
         }
 
-        // 2. Allocate Device Memory
+        // 3. Allocate Device Memory
         d_local_neurons.allocate(my_neuron_count);
         d_synapses.allocate(config.synapses.size());
         
@@ -333,13 +360,13 @@ public:
             CUDA_CHECK(cudaMalloc(&d_global_production, global_num_neurons * sizeof(int)));
         }
 
-        // 3. Upload Local Neuron Data
+        // 4. Upload Local Neuron Data
         uploadLocalNeurons(config);
         
-        // 4. Upload Rules (Flattened for Local Neurons)
+        // 5. Upload Rules (Flattened for Local Neurons)
         uploadLocalRules(config);
 
-        // 5. Upload ALL Synapses (Replication strategy)
+        // 6. Upload ALL Synapses (Replication strategy)
         uploadGlobalSynapses(config);
 
         // Allocate Host buffers
@@ -430,6 +457,15 @@ public:
 
         // 3. Broadcast result from root to all ranks
         MPI_Bcast(global_state.data(), global_num_neurons, MPI_INT, 0, MPI_COMM_WORLD);
+
+        // 4. Restore Original Order (if permuted)
+        if (!new_to_old_map.empty()) {
+            std::vector<int> restored_state(global_num_neurons);
+            for (int i = 0; i < global_num_neurons; ++i) {
+                restored_state[new_to_old_map[i]] = global_state[i];
+            }
+            return restored_state;
+        }
 
         return global_state;
     }

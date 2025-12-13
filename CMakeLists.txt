@@ -200,6 +200,22 @@ if(BUILD_TESTS)
              COMMAND ${MPIEXEC_EXECUTABLE} ${MPIEXEC_NUMPROC_FLAG} 2 --host localhost,10.0.0.2
                      ${MPIEXEC_PREFLAGS} $<TARGET_FILE:test_snp_simulator> ${MPIEXEC_POSTFLAGS} --allow-run-as-root --oversubscribe)
 
+    # Partitioner Tests
+    add_executable(test_partitioner
+        tests/snp/PartitionerTest.cpp
+    )
+
+    target_link_libraries(test_partitioner PRIVATE
+        snp_system
+        GTest::gtest
+        GTest::gtest_main
+        MPI::MPI_CXX
+    )
+
+    add_test(NAME PartitionerTest
+        COMMAND ${MPIEXEC_EXECUTABLE} ${MPIEXEC_NUMPROC_FLAG} 1
+        ${MPIEXEC_PREFLAGS} $<TARGET_FILE:test_partitioner> ${MPIEXEC_POSTFLAGS} --allow-run-as-root --oversubscribe)
+
     # SNP Sort Tests
     add_executable(test_sort
         tests/sort/SnpSort.cpp
