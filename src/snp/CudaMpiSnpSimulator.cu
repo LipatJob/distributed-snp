@@ -3,34 +3,49 @@
 #include <mpi.h>
 #include <cuda_runtime.h>
 #include <vector>
-#include <iostream>
-#include <stdexcept>
 #include <algorithm>
 #include <map>
+#include <set>
+#include <iostream>
+#include <sstream>
 #include <numeric>
+#include <cstring>
+#include <chrono>
 
-// --- CUDA Macros & Constants ---
+// --- Error Handling Macros ---
+
 #define CUDA_CHECK(call) \
     do { \
         cudaError_t err = call; \
         if (err != cudaSuccess) { \
-            fprintf(stderr, "CUDA error at %s:%d: %s\n", __FILE__, __LINE__, cudaGetErrorString(err)); \
-            MPI_Abort(MPI_COMM_WORLD, -1); \
+            fprintf(stderr, "CUDA error at %s:%d - %s\n", __FILE__, __LINE__, cudaGetErrorString(err)); \
+            MPI_Abort(MPI_COMM_WORLD, 1); \
+        } \
+    } while(0)
+
+#define MPI_CHECK(call) \
+    do { \
+        int err = call; \
+        if (err != MPI_SUCCESS) { \
+            fprintf(stderr, "MPI error at %s:%d\n", __FILE__, __LINE__); \
+            MPI_Abort(MPI_COMM_WORLD, 1); \
         } \
     } while(0)
 
 constexpr int BLOCK_SIZE = 256;
 
-// --- Device Structures (SoA) ---
+namespace {
 
-// Stores state for neurons owned by this rank
-struct LocalNeuronData {
-    int* configuration;      // Spike counts
-    int* initial_config;     // For reset
-    bool* is_open;           // Status
-    int* delay_timer;
-    int* pending_emission;
-    int* spike_production;   // Intermediate production buffer
+// --- Device Structures ---
+
+// Local Neuron State (SoA)
+struct DeviceNeuronData {
+    int* configuration;       // Current spike count
+    int* initial_config;      // For reset
+    char* is_open;            // Status (using char for byte alignment)
+    int* delay_timer;         // Timer
+    int* pending_emission;    // Spikes waiting for delay to expire
+    int* spike_production;    // Immediate production from rules
     int count;
 
     void allocate(int n) {
@@ -38,7 +53,7 @@ struct LocalNeuronData {
         if (n == 0) return;
         CUDA_CHECK(cudaMalloc(&configuration, n * sizeof(int)));
         CUDA_CHECK(cudaMalloc(&initial_config, n * sizeof(int)));
-        CUDA_CHECK(cudaMalloc(&is_open, n * sizeof(bool)));
+        CUDA_CHECK(cudaMalloc(&is_open, n * sizeof(char)));
         CUDA_CHECK(cudaMalloc(&delay_timer, n * sizeof(int)));
         CUDA_CHECK(cudaMalloc(&pending_emission, n * sizeof(int)));
         CUDA_CHECK(cudaMalloc(&spike_production, n * sizeof(int)));
@@ -52,631 +67,722 @@ struct LocalNeuronData {
     }
 };
 
-struct LocalRuleData {
-    int* input_threshold;
-    int* spikes_consumed;
-    int* spikes_produced;
-    int* delay;
-    int* rule_start_idx;     // Index into arrays above
-    int* rule_count;         // How many rules this neuron has
-    int total_rules;
+// Rule Data (SoA)
+struct DeviceRuleData {
+    int* neuron_id = nullptr;
+    int* input_threshold = nullptr;
+    int* spikes_consumed = nullptr;
+    int* spikes_produced = nullptr;
+    int* delay = nullptr;
+    int* rule_start_idx = nullptr;      
+    int* rule_count = nullptr;          
+    int count = 0;       // Total rules
+    int n_neurons = 0;   // Track neurons for freeing
 
-    void allocate(int n_neurons, int n_rules) {
-        total_rules = n_rules;
-        if (n_rules == 0) return;
-        CUDA_CHECK(cudaMalloc(&input_threshold, n_rules * sizeof(int)));
-        CUDA_CHECK(cudaMalloc(&spikes_consumed, n_rules * sizeof(int)));
-        CUDA_CHECK(cudaMalloc(&spikes_produced, n_rules * sizeof(int)));
-        CUDA_CHECK(cudaMalloc(&delay, n_rules * sizeof(int)));
-        if (n_neurons > 0) {
-            CUDA_CHECK(cudaMalloc(&rule_start_idx, n_neurons * sizeof(int)));
-            CUDA_CHECK(cudaMalloc(&rule_count, n_neurons * sizeof(int)));
+    void allocate(int total_rules, int num_neurons) {
+        count = total_rules;
+        n_neurons = num_neurons; // Store this for free()
+
+        // 1. Allocate Rule Arrays (Only if rules exist)
+        if (total_rules > 0) {
+            CUDA_CHECK(cudaMalloc(&neuron_id, total_rules * sizeof(int)));
+            CUDA_CHECK(cudaMalloc(&input_threshold, total_rules * sizeof(int)));
+            CUDA_CHECK(cudaMalloc(&spikes_consumed, total_rules * sizeof(int)));
+            CUDA_CHECK(cudaMalloc(&spikes_produced, total_rules * sizeof(int)));
+            CUDA_CHECK(cudaMalloc(&delay, total_rules * sizeof(int)));
+        }
+
+        // 2. Allocate Neuron Maps (ALWAYS if neurons exist, even if rules don't)
+        if (num_neurons > 0) {
+            CUDA_CHECK(cudaMalloc(&rule_start_idx, num_neurons * sizeof(int)));
+            CUDA_CHECK(cudaMalloc(&rule_count, num_neurons * sizeof(int)));
         }
     }
 
     void free() {
-        if (total_rules == 0) return;
-        cudaFree(input_threshold); cudaFree(spikes_consumed);
-        cudaFree(spikes_produced); cudaFree(delay);
-        cudaFree(rule_start_idx); cudaFree(rule_count);
+        // cudaFree is safe on nullptr, so we can remove the 'if count==0' checks
+        // that were preventing cleanup of partial allocations.
+        cudaFree(neuron_id);
+        cudaFree(input_threshold);
+        cudaFree(spikes_consumed);
+        cudaFree(spikes_produced);
+        cudaFree(delay);
+        cudaFree(rule_start_idx);
+        cudaFree(rule_count);
+        
+        // Reset pointers to prevent double-free
+        neuron_id = nullptr; input_threshold = nullptr; 
+        spikes_consumed = nullptr; spikes_produced = nullptr; 
+        delay = nullptr; rule_start_idx = nullptr; rule_count = nullptr;
     }
 };
-
-// Synapses where Source and Dest are BOTH on this rank
-struct LocalSynapseData {
-    int* source_local_idx;
-    int* dest_local_idx;
+// Synapse Data (SoA) - Purely Local
+struct DeviceLocalSynapseData {
+    int* source_idx; // Local Index
+    int* dest_idx;   // Local Index
     int* weight;
     int count;
 
     void allocate(int n) {
         count = n;
         if (n == 0) return;
-        CUDA_CHECK(cudaMalloc(&source_local_idx, n * sizeof(int)));
-        CUDA_CHECK(cudaMalloc(&dest_local_idx, n * sizeof(int)));
+        CUDA_CHECK(cudaMalloc(&source_idx, n * sizeof(int)));
+        CUDA_CHECK(cudaMalloc(&dest_idx, n * sizeof(int)));
         CUDA_CHECK(cudaMalloc(&weight, n * sizeof(int)));
     }
 
     void free() {
         if (count == 0) return;
-        cudaFree(source_local_idx); cudaFree(dest_local_idx); cudaFree(weight);
+        cudaFree(source_idx); cudaFree(dest_idx); cudaFree(weight);
     }
 };
 
-// Synapses where Source is Local, but Dest is Remote
-// We group these by Destination Rank to optimize packing
-struct BoundarySynapseData {
-    int* source_local_idx;   // Which local neuron fired
-    int* buffer_idx;         // Slot index in the outgoing buffer for that rank
+// Outgoing Synapse Data (SoA) - Local Source -> Export Buffer
+struct DeviceExportSynapseData {
+    int* source_idx;      // Local Index
+    int* export_buf_idx;  // Index in the contiguous export buffer
     int* weight;
     int count;
 
     void allocate(int n) {
         count = n;
         if (n == 0) return;
-        CUDA_CHECK(cudaMalloc(&source_local_idx, n * sizeof(int)));
-        CUDA_CHECK(cudaMalloc(&buffer_idx, n * sizeof(int)));
+        CUDA_CHECK(cudaMalloc(&source_idx, n * sizeof(int)));
+        CUDA_CHECK(cudaMalloc(&export_buf_idx, n * sizeof(int)));
         CUDA_CHECK(cudaMalloc(&weight, n * sizeof(int)));
     }
 
     void free() {
         if (count == 0) return;
-        cudaFree(source_local_idx); cudaFree(buffer_idx); cudaFree(weight);
+        cudaFree(source_idx); cudaFree(export_buf_idx); cudaFree(weight);
     }
 };
 
-// --- Kernels ---
+// Import Mapping (SoA) - Import Buffer -> Local Dest
+struct DeviceImportMapData {
+    int* import_buf_idx; // Index in the contiguous import buffer
+    int* dest_idx;       // Local Index
+    int count;
 
-// 1. Update Delays & Open/Close Status
-__global__ void kUpdateStatus(LocalNeuronData neurons) {
+    void allocate(int n) {
+        count = n;
+        if (n == 0) return;
+        CUDA_CHECK(cudaMalloc(&import_buf_idx, n * sizeof(int)));
+        CUDA_CHECK(cudaMalloc(&dest_idx, n * sizeof(int)));
+    }
+
+    void free() {
+        if (count == 0) return;
+        cudaFree(import_buf_idx); cudaFree(dest_idx);
+    }
+};
+
+// --- CUDA Kernels ---
+
+// 1. Update delays and open neurons
+__global__ void kUpdateStatus(DeviceNeuronData neurons) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= neurons.count) return;
 
     if (neurons.delay_timer[idx] > 0) {
         neurons.delay_timer[idx]--;
         if (neurons.delay_timer[idx] == 0) {
-            neurons.is_open[idx] = true;
+            neurons.is_open[idx] = 1;
         }
     }
 }
 
-// 2. Select Rules & Compute Production
-__global__ void kSelectRules(LocalNeuronData neurons, LocalRuleData rules) {
+// 2. Select and Fire Rules (Same logic as single-node, adapted for SoA)
+__global__ void kSelectAndFire(DeviceNeuronData neurons, DeviceRuleData rules) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= neurons.count) return;
-    
-    // Default: no production
-    neurons.spike_production[idx] = 0;
 
     if (!neurons.is_open[idx]) return;
 
     int current_spikes = neurons.configuration[idx];
-    int start = rules.rule_start_idx[idx];
-    int end = start + rules.rule_count[idx];
+    int r_start = rules.rule_start_idx[idx];
+    int r_count = rules.rule_count[idx];
 
-    // Deterministic selection (first applicable)
-    for (int i = start; i < end; ++i) {
-        if (current_spikes >= rules.input_threshold[i]) {
-            int consumed = rules.spikes_consumed[i];
-            int produced = rules.spikes_produced[i];
-            int d = rules.delay[i];
+    // Linear search for first applicable rule (Deterministic)
+    for (int i = 0; i < r_count; ++i) {
+        int r_idx = r_start + i;
+        if (current_spikes >= rules.input_threshold[r_idx]) {
+            // Apply Rule
+            neurons.configuration[idx] -= rules.spikes_consumed[r_idx];
+            int produced = rules.spikes_produced[r_idx];
+            int delay = rules.delay[r_idx];
 
-            neurons.configuration[idx] -= consumed;
-
-            if (d > 0) {
-                neurons.is_open[idx] = false;
-                neurons.delay_timer[idx] = d;
+            if (delay > 0) {
+                neurons.is_open[idx] = 0;
+                neurons.delay_timer[idx] = delay;
                 neurons.pending_emission[idx] = produced;
             } else {
                 neurons.spike_production[idx] = produced;
             }
-            break; // Apply only one rule
+            break; // Only one rule fires per step
         }
     }
 }
 
-// 3. Propagate Pending Emissions (Delayed Spikes becoming active)
-// This adds pending spikes to the current production buffer so they are treated uniformly
-__global__ void kActivatePending(LocalNeuronData neurons) {
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx >= neurons.count) return;
-
-    // If neuron just opened and had pending spikes
-    if (neurons.is_open[idx] && neurons.pending_emission[idx] > 0) {
-        neurons.spike_production[idx] += neurons.pending_emission[idx];
-        neurons.pending_emission[idx] = 0; 
-    }
-}
-
-// 4. Propagate Local Synapses (Internal)
-__global__ void kPropagateLocal(LocalNeuronData neurons, LocalSynapseData synapses) {
+// 3. Propagate Spikes (Local Only)
+// Handles both immediate production and pending emissions that just unlocked
+__global__ void kPropagateLocal(DeviceNeuronData neurons, DeviceLocalSynapseData synapses) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= synapses.count) return;
 
-    int src = synapses.source_local_idx[idx];
-    int produced = neurons.spike_production[src];
+    int src = synapses.source_idx[idx];
+    int dst = synapses.dest_idx[idx];
+    int w = synapses.weight[idx];
 
-    if (produced > 0) {
-        int dst = synapses.dest_local_idx[idx];
-        int w = synapses.weight[idx];
-        
-        // Only open neurons receive spikes
-        if (neurons.is_open[dst]) {
-            atomicAdd(&neurons.configuration[dst], produced * w);
-        }
+    int spikes_to_send = 0;
+
+    // Case A: Immediate production
+    spikes_to_send += neurons.spike_production[src] * w;
+
+    // Case B: Pending emission (only if neuron is open and has pending)
+    // Note: kUpdateStatus runs before this, so if delay hit 0, is_open is true
+    if (neurons.is_open[src] && neurons.pending_emission[src] > 0) {
+        spikes_to_send += neurons.pending_emission[src] * w;
+    }
+
+    if (spikes_to_send > 0 && neurons.is_open[dst]) {
+        atomicAdd(&neurons.configuration[dst], spikes_to_send);
     }
 }
 
-// 5. Pack Remote Buffers (Boundary)
-// Aggregates spikes for specific remote neurons into a dense buffer
-__global__ void kPackRemote(LocalNeuronData neurons, BoundarySynapseData boundary, int* out_buffer) {
+// 4. Populate Export Buffer (For Remote Targets)
+__global__ void kPopulateExport(DeviceNeuronData neurons, DeviceExportSynapseData synapses, int* export_buffer) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx >= boundary.count) return;
+    if (idx >= synapses.count) return;
 
-    int src = boundary.source_local_idx[idx];
-    int produced = neurons.spike_production[src];
+    int src = synapses.source_idx[idx];
+    int buf_idx = synapses.export_buf_idx[idx];
+    int w = synapses.weight[idx];
 
-    if (produced > 0) {
-        int buf_idx = boundary.buffer_idx[idx]; // Pre-calculated slot for the destination neuron
-        int w = boundary.weight[idx];
-        // Aggregate spikes destined for the same remote neuron
-        atomicAdd(&out_buffer[buf_idx], produced * w);
+    int spikes_to_send = 0;
+    spikes_to_send += neurons.spike_production[src] * w;
+
+    if (neurons.is_open[src] && neurons.pending_emission[src] > 0) {
+        spikes_to_send += neurons.pending_emission[src] * w;
+    }
+
+    if (spikes_to_send > 0) {
+        atomicAdd(&export_buffer[buf_idx], spikes_to_send);
     }
 }
 
-// 6. Unpack/Integrate Remote Spikes
-// Adds received spikes to local neurons
-// 'in_buffer' contains aggregated spikes for specific local neurons (mapped by index)
-__global__ void kIntegrateRemote(LocalNeuronData neurons, const int* in_buffer, const int* map_buffer_to_local, int count) {
+// 5. Apply Imported Spikes (From Other Ranks)
+__global__ void kApplyImports(DeviceNeuronData neurons, DeviceImportMapData imports, int* import_buffer) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx >= count) return;
+    if (idx >= imports.count) return;
 
-    int incoming_spikes = in_buffer[idx];
-    if (incoming_spikes > 0) {
-        int local_neuron_idx = map_buffer_to_local[idx];
-        if (neurons.is_open[local_neuron_idx]) {
-            atomicAdd(&neurons.configuration[local_neuron_idx], incoming_spikes);
-        }
+    int buf_idx = imports.import_buf_idx[idx];
+    int dst = imports.dest_idx[idx];
+    
+    int spikes = import_buffer[buf_idx];
+
+    if (spikes > 0 && neurons.is_open[dst]) {
+        // Atomic because multiple remote nodes might target the same local neuron
+        // (Though the map is usually 1-to-1 per import buffer slot, this is safer)
+        atomicAdd(&neurons.configuration[dst], spikes);
     }
 }
 
-// 7. Reset Kernel
-__global__ void kReset(LocalNeuronData neurons) {
+// 6. Cleanup (Clear production and pending emissions)
+__global__ void kCleanup(DeviceNeuronData neurons) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= neurons.count) return;
+
+    neurons.spike_production[idx] = 0;
+    // Only clear pending if it was emitted (neuron is open)
+    if (neurons.is_open[idx]) {
+        neurons.pending_emission[idx] = 0;
+    }
+}
+
+__global__ void kResetNeurons(DeviceNeuronData neurons) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= neurons.count) return;
     neurons.configuration[idx] = neurons.initial_config[idx];
-    neurons.is_open[idx] = true;
+    neurons.is_open[idx] = 1;
     neurons.delay_timer[idx] = 0;
     neurons.pending_emission[idx] = 0;
     neurons.spike_production[idx] = 0;
 }
 
+} // namespace
 
-// --- Main Class Implementation ---
+
+// --- Main Implementation Class ---
 
 class CudaMpiSnpSimulator : public ISnpSimulator {
 private:
-    int mpi_rank;
-    int mpi_size;
-
-    // Partitioning Info
+    int mpi_rank, mpi_size;
+    
+    // Partitioning
     int global_num_neurons;
-    int local_neuron_start; // Inclusive
-    int local_neuron_end;   // Exclusive
-    int local_neuron_count;
-
-    // CUDA Streams
-    cudaStream_t compute_stream;
-    cudaStream_t comm_stream;
+    int local_start_idx;
+    int local_end_idx;
+    int local_num_neurons;
 
     // Device Data
-    LocalNeuronData d_neurons;
-    LocalRuleData d_rules;
-    LocalSynapseData d_local_synapses;
+    DeviceNeuronData d_neurons;
+    DeviceRuleData d_rules;
+    DeviceLocalSynapseData d_local_synapses;
+    DeviceExportSynapseData d_export_synapses;
+    DeviceImportMapData d_import_map;
 
-    // Communication Data
-    // We maintain a separate structure for each neighbor rank we send to
-    struct NeighborComm {
-        int rank;
-        BoundarySynapseData d_boundary_synapses; // Synapses pointing to this rank
-        
-        // Host buffers (pinned memory for fast transfer)
-        int* h_send_buffer; 
-        int* h_recv_buffer;
-        
-        // Device buffers
-        int* d_send_buffer;
-        int* d_recv_buffer;
-        int* d_map_recv_to_local; // Maps recv_buffer[i] -> local_neuron_index
-
-        int send_count; // Number of unique neurons on 'rank' we touch
-        int recv_count; // Number of unique neurons on 'my_rank' that 'rank' touches
-        
-        MPI_Request send_req;
-        MPI_Request recv_req;
+    // Communication Buffers (MPI + Device)
+    // We organize buffers by remote rank.
+    struct RankCommData {
+        // Host Buffers
+        std::vector<int> h_send_buf;
+        std::vector<int> h_recv_buf;
+        // Offsets in the monolithic Device Export/Import buffers
+        int export_offset;
+        int export_count;
+        int import_offset;
+        int import_count;
     };
+    std::vector<RankCommData> comm_map; // Index = Rank ID
 
-    std::vector<NeighborComm> neighbors;
+    int* d_export_buffer = nullptr;
+    int* d_import_buffer = nullptr;
+    int total_export_size = 0;
+    int total_import_size = 0;
 
-    // Performance
+    // Performance Metrics
     double compute_time = 0.0;
     double comm_time = 0.0;
+    int steps = 0;
 
 public:
     CudaMpiSnpSimulator() {
         MPI_Comm_rank(MPI_COMM_WORLD, &mpi_rank);
         MPI_Comm_size(MPI_COMM_WORLD, &mpi_size);
-        CUDA_CHECK(cudaStreamCreate(&compute_stream));
-        CUDA_CHECK(cudaStreamCreate(&comm_stream));
     }
 
     ~CudaMpiSnpSimulator() {
-        cleanup();
-        cudaStreamDestroy(compute_stream);
-        cudaStreamDestroy(comm_stream);
+        d_neurons.free();
+        d_rules.free();
+        d_local_synapses.free();
+        d_export_synapses.free();
+        d_import_map.free();
+        if (d_export_buffer) cudaFree(d_export_buffer);
+        if (d_import_buffer) cudaFree(d_import_buffer);
     }
 
     bool loadSystem(const SnpSystemConfig& config) override {
-        cleanup();
         global_num_neurons = config.neurons.size();
 
-        // 1. Block Partitioning
-        int neurons_per_rank = (global_num_neurons + mpi_size - 1) / mpi_size;
-        local_neuron_start = mpi_rank * neurons_per_rank;
-        local_neuron_end = std::min(local_neuron_start + neurons_per_rank, global_num_neurons);
-        local_neuron_count = std::max(0, local_neuron_end - local_neuron_start);
+        // 1. Calculate Partitioning (Block Distribution)
+        int base = global_num_neurons / mpi_size;
+        int rem = global_num_neurons % mpi_size;
+        
+        if (mpi_rank < rem) {
+            local_num_neurons = base + 1;
+            local_start_idx = mpi_rank * local_num_neurons;
+        } else {
+            local_num_neurons = base;
+            local_start_idx = rem * (base + 1) + (mpi_rank - rem) * base;
+        }
+        local_end_idx = local_start_idx + local_num_neurons;
 
-        // 2. Load Local Neurons & Rules
-        loadLocalNeurons(config);
+        // 2. Prepare Local Neurons
+        d_neurons.allocate(local_num_neurons);
+        std::vector<int> h_initial(local_num_neurons);
+        std::vector<char> h_open(local_num_neurons, 1);
+        std::vector<int> h_zeros(local_num_neurons, 0);
 
-        // 3. Analyze Synapses (Classify into Local-Local and Local-Remote)
-        // Also builds the communication maps for receiving data
-        analyzeSynapses(config);
+        for (int i = 0; i < local_num_neurons; ++i) {
+            h_initial[i] = config.neurons[local_start_idx + i].initial_spikes;
+        }
+
+        CUDA_CHECK(cudaMemcpy(d_neurons.configuration, h_initial.data(), local_num_neurons * sizeof(int), cudaMemcpyHostToDevice));
+        CUDA_CHECK(cudaMemcpy(d_neurons.initial_config, h_initial.data(), local_num_neurons * sizeof(int), cudaMemcpyHostToDevice));
+        CUDA_CHECK(cudaMemcpy(d_neurons.is_open, h_open.data(), local_num_neurons * sizeof(char), cudaMemcpyHostToDevice));
+        CUDA_CHECK(cudaMemcpy(d_neurons.delay_timer, h_zeros.data(), local_num_neurons * sizeof(int), cudaMemcpyHostToDevice));
+        CUDA_CHECK(cudaMemcpy(d_neurons.pending_emission, h_zeros.data(), local_num_neurons * sizeof(int), cudaMemcpyHostToDevice));
+        CUDA_CHECK(cudaMemcpy(d_neurons.spike_production, h_zeros.data(), local_num_neurons * sizeof(int), cudaMemcpyHostToDevice));
+
+        // 3. Upload Rules (Flattened)
+        prepareRules(config);
+
+        // 4. Analyze Topology & Prepare Synapses (The Complex Part)
+        prepareTopology(config);
 
         return true;
     }
 
-    void step(int steps) override {
-        for (int s = 0; s < steps; ++s) {
-            auto t_start = MPI_Wtime();
+    void step(int num_steps = 1) override {
+        int gridSize = (local_num_neurons + BLOCK_SIZE - 1) / BLOCK_SIZE;
+        int synapseGridSize = (d_local_synapses.count + BLOCK_SIZE - 1) / BLOCK_SIZE;
+        int exportGridSize = (d_export_synapses.count + BLOCK_SIZE - 1) / BLOCK_SIZE;
+        int importGridSize = (d_import_map.count + BLOCK_SIZE - 1) / BLOCK_SIZE;
 
-            int threads = BLOCK_SIZE;
-            int blocks = (local_neuron_count + threads - 1) / threads;
+        // Ensure grid sizes are at least 1 to avoid launch errors
+        gridSize = std::max(1, gridSize);
+        synapseGridSize = std::max(1, synapseGridSize);
+        exportGridSize = std::max(1, exportGridSize);
+        importGridSize = std::max(1, importGridSize);
 
-            // --- Phase 1: Local Compute (Status & Rule Selection) ---
-            if (local_neuron_count > 0) {
-                kUpdateStatus<<<blocks, threads, 0, compute_stream>>>(d_neurons);
-                kSelectRules<<<blocks, threads, 0, compute_stream>>>(d_neurons, d_rules);
-                kActivatePending<<<blocks, threads, 0, compute_stream>>>(d_neurons);
+        for (int s = 0; s < num_steps; ++s) {
+            auto t1 = std::chrono::high_resolution_clock::now();
+
+            // --- Phase 1: Compute (Device) ---
+            if (local_num_neurons > 0) {
+                // Clear export buffer before accumulating
+                if (total_export_size > 0) {
+                    CUDA_CHECK(cudaMemset(d_export_buffer, 0, total_export_size * sizeof(int)));
+                }
+
+                kUpdateStatus<<<gridSize, BLOCK_SIZE>>>(d_neurons);
+                kSelectAndFire<<<gridSize, BLOCK_SIZE>>>(d_neurons, d_rules);
+                
+                if (d_local_synapses.count > 0) {
+                    kPropagateLocal<<<synapseGridSize, BLOCK_SIZE>>>(d_neurons, d_local_synapses);
+                }
+                
+                if (d_export_synapses.count > 0) {
+                    kPopulateExport<<<exportGridSize, BLOCK_SIZE>>>(d_neurons, d_export_synapses, d_export_buffer);
+                }
             }
-            // Sync compute stream needed before packing? 
-            // Yes, because Pack reads spike_production written by SelectRules.
-            // But we can daisy-chain via events or just issue in order if on same stream.
-            // We want Pack on comm_stream to wait for SelectRules on compute_stream.
-            cudaEvent_t compute_done;
-            cudaEventCreate(&compute_done);
-            cudaEventRecord(compute_done, compute_stream);
-            cudaStreamWaitEvent(comm_stream, compute_done, 0);
+            CUDA_CHECK(cudaDeviceSynchronize());
 
-            // --- Phase 2: Communication (Stream 1) ---
-            
-            // 2a. Pack Outgoing Buffers on GPU
-            for (auto& nb : neighbors) {
-                if (nb.send_count > 0) {
-                    CUDA_CHECK(cudaMemsetAsync(nb.d_send_buffer, 0, nb.send_count * sizeof(int), comm_stream));
-                    int syn_blocks = (nb.d_boundary_synapses.count + threads - 1) / threads;
-                    kPackRemote<<<syn_blocks, threads, 0, comm_stream>>>(
-                        d_neurons, nb.d_boundary_synapses, nb.d_send_buffer
-                    );
-                    
-                    // Copy packed buffer to Pinned Host Memory
-                    CUDA_CHECK(cudaMemcpyAsync(nb.h_send_buffer, nb.d_send_buffer, 
-                                             nb.send_count * sizeof(int), cudaMemcpyDeviceToHost, comm_stream));
+            auto t2 = std::chrono::high_resolution_clock::now();
+            compute_time += std::chrono::duration<double, std::milli>(t2 - t1).count();
+
+            // --- Phase 2: Communication (Hybrid) ---
+            // 1. Download Export Buffers
+            if (total_export_size > 0) {
+                // In a production system, we would use pinned memory or CUDA-aware MPI. 
+                // For robustness here, we copy to host vectors first.
+                // Note: We copy the whole monolithic buffer, then scatter to MPI buffers
+                std::vector<int> h_all_exports(total_export_size);
+                CUDA_CHECK(cudaMemcpy(h_all_exports.data(), d_export_buffer, total_export_size * sizeof(int), cudaMemcpyDeviceToHost));
+                
+                // Pack into specific send buffers
+                for (int r = 0; r < mpi_size; ++r) {
+                    if (r == mpi_rank) continue;
+                    if (comm_map[r].export_count > 0) {
+                        std::memcpy(comm_map[r].h_send_buf.data(), 
+                                    &h_all_exports[comm_map[r].export_offset], 
+                                    comm_map[r].export_count * sizeof(int));
+                    }
+                }
+            }
+
+            // 2. MPI Exchange
+            std::vector<MPI_Request> requests;
+            for (int r = 0; r < mpi_size; ++r) {
+                if (r == mpi_rank) continue;
+                
+                // Send
+                if (comm_map[r].export_count > 0) {
+                    MPI_Request req;
+                    MPI_Isend(comm_map[r].h_send_buf.data(), comm_map[r].export_count, MPI_INT, r, 0, MPI_COMM_WORLD, &req);
+                    requests.push_back(req);
+                }
+
+                // Recv
+                if (comm_map[r].import_count > 0) {
+                    MPI_Request req;
+                    MPI_Irecv(comm_map[r].h_recv_buf.data(), comm_map[r].import_count, MPI_INT, r, 0, MPI_COMM_WORLD, &req);
+                    requests.push_back(req);
                 }
             }
             
-            // 2b. Start MPI Recvs (CPU) - Do this early
-            for (auto& nb : neighbors) {
-                if (nb.recv_count > 0) {
-                    MPI_Irecv(nb.h_recv_buffer, nb.recv_count, MPI_INT, nb.rank, 0, MPI_COMM_WORLD, &nb.recv_req);
+            if (!requests.empty()) {
+                MPI_Waitall(requests.size(), requests.data(), MPI_STATUSES_IGNORE);
+            }
+
+            // 3. Upload Import Buffers
+            if (total_import_size > 0) {
+                std::vector<int> h_all_imports(total_import_size);
+                
+                // Gather from MPI buffers
+                for (int r = 0; r < mpi_size; ++r) {
+                    if (r == mpi_rank) continue;
+                    if (comm_map[r].import_count > 0) {
+                        std::memcpy(&h_all_imports[comm_map[r].import_offset], 
+                                    comm_map[r].h_recv_buf.data(), 
+                                    comm_map[r].import_count * sizeof(int));
+                    }
                 }
+                
+                CUDA_CHECK(cudaMemcpy(d_import_buffer, h_all_imports.data(), total_import_size * sizeof(int), cudaMemcpyHostToDevice));
             }
 
-            // 2c. Wait for D2H copy to finish so we can Send
-            cudaStreamSynchronize(comm_stream); 
+            auto t3 = std::chrono::high_resolution_clock::now();
+            comm_time += std::chrono::duration<double, std::milli>(t3 - t2).count();
 
-            // 2d. Start MPI Sends (CPU)
-            for (auto& nb : neighbors) {
-                if (nb.send_count > 0) {
-                    MPI_Isend(nb.h_send_buffer, nb.send_count, MPI_INT, nb.rank, 0, MPI_COMM_WORLD, &nb.send_req);
+            // --- Phase 3: Apply Imports & Cleanup (Device) ---
+            if (local_num_neurons > 0) {
+                if (d_import_map.count > 0) {
+                    kApplyImports<<<importGridSize, BLOCK_SIZE>>>(d_neurons, d_import_map, d_import_buffer);
                 }
+                kCleanup<<<gridSize, BLOCK_SIZE>>>(d_neurons);
             }
+            CUDA_CHECK(cudaDeviceSynchronize());
 
-            // --- Phase 3: Local Propagation (Stream 0 - Overlapped with MPI) ---
-            if (d_local_synapses.count > 0) {
-                int syn_blocks = (d_local_synapses.count + threads - 1) / threads;
-                kPropagateLocal<<<syn_blocks, threads, 0, compute_stream>>>(d_neurons, d_local_synapses);
-            }
-
-            // --- Phase 4: Finish Communication & Integrate (Stream 1) ---
+            auto t4 = std::chrono::high_resolution_clock::now();
+            compute_time += std::chrono::duration<double, std::milli>(t4 - t3).count();
             
-            // Wait for MPI Recvs
-            for (auto& nb : neighbors) {
-                if (nb.recv_count > 0) {
-                    MPI_Wait(&nb.recv_req, MPI_STATUS_IGNORE);
-                    
-                    // Copy H2D
-                    CUDA_CHECK(cudaMemcpyAsync(nb.d_recv_buffer, nb.h_recv_buffer, 
-                                             nb.recv_count * sizeof(int), cudaMemcpyHostToDevice, comm_stream));
-                    
-                    // Integrate
-                    int int_blocks = (nb.recv_count + threads - 1) / threads;
-                    kIntegrateRemote<<<int_blocks, threads, 0, comm_stream>>>(
-                        d_neurons, nb.d_recv_buffer, nb.d_map_recv_to_local, nb.recv_count
-                    );
-                }
-                if (nb.send_count > 0) {
-                    MPI_Wait(&nb.send_req, MPI_STATUS_IGNORE);
-                }
-            }
-
-            // --- Phase 5: Synchronization ---
-            cudaStreamSynchronize(compute_stream);
-            cudaStreamSynchronize(comm_stream);
-            cudaEventDestroy(compute_done);
-
-            compute_time += (MPI_Wtime() - t_start) * 1000.0;
+            steps++;
         }
     }
 
     std::vector<int> getGlobalState() const override {
-        // Gather local state
-        std::vector<int> local_state(local_neuron_count);
-        if (local_neuron_count > 0) {
-            CUDA_CHECK(cudaMemcpy(local_state.data(), d_neurons.configuration, 
-                       local_neuron_count * sizeof(int), cudaMemcpyDeviceToHost));
+        // 1. Retrieve local state
+        std::vector<int> local_state(local_num_neurons);
+        if (local_num_neurons > 0) {
+            CUDA_CHECK(cudaMemcpy(local_state.data(), d_neurons.configuration, local_num_neurons * sizeof(int), cudaMemcpyDeviceToHost));
         }
 
-        // Gather counts for Gatherv
-        std::vector<int> counts(mpi_size);
+        // 2. Gather sizes for Allgatherv
+        std::vector<int> recv_counts(mpi_size);
+        int local_n = local_num_neurons;
+        MPI_Allgather(&local_n, 1, MPI_INT, recv_counts.data(), 1, MPI_INT, MPI_COMM_WORLD);
+
+        // 3. Calculate displacements
         std::vector<int> displs(mpi_size);
-        MPI_Allgather(&local_neuron_count, 1, MPI_INT, counts.data(), 1, MPI_INT, MPI_COMM_WORLD);
-
         displs[0] = 0;
-        for(int i=1; i<mpi_size; i++) displs[i] = displs[i-1] + counts[i-1];
+        for (int i = 1; i < mpi_size; ++i) {
+            displs[i] = displs[i-1] + recv_counts[i-1];
+        }
+        int total_neurons = displs.back() + recv_counts.back();
 
-        std::vector<int> global_state(global_num_neurons);
-        MPI_Allgatherv(local_state.data(), local_neuron_count, MPI_INT,
-                       global_state.data(), counts.data(), displs.data(), MPI_INT, MPI_COMM_WORLD);
+        // 4. Gather Data
+        std::vector<int> global_state(total_neurons);
+        MPI_Allgatherv(local_state.data(), local_n, MPI_INT, 
+                       global_state.data(), recv_counts.data(), displs.data(), MPI_INT, MPI_COMM_WORLD);
 
         return global_state;
     }
 
     void reset() override {
-        if (local_neuron_count > 0) {
-            int blocks = (local_neuron_count + BLOCK_SIZE - 1) / BLOCK_SIZE;
-            kReset<<<blocks, BLOCK_SIZE, 0, compute_stream>>>(d_neurons);
-            cudaStreamSynchronize(compute_stream);
+        int gridSize = (local_num_neurons + BLOCK_SIZE - 1) / BLOCK_SIZE;
+        if (gridSize > 0) {
+            kResetNeurons<<<gridSize, BLOCK_SIZE>>>(d_neurons);
+            CUDA_CHECK(cudaDeviceSynchronize());
         }
+        compute_time = 0;
+        comm_time = 0;
+        steps = 0;
     }
 
     std::string getPerformanceReport() const override {
-        double total_compute, total_comm;
-        MPI_Reduce(&compute_time, &total_compute, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
-        
-        if (mpi_rank == 0) {
-            return "MPI+CUDA Simulator: Max Compute Time (ms): " + std::to_string(total_compute);
-        }
-        return "";
+        std::ostringstream ss;
+        ss << "=== MPI+CUDA Rank " << mpi_rank << " Report ===\n";
+        ss << "Neurons Owned: " << local_num_neurons << "\n";
+        ss << "Compute Time: " << compute_time << " ms\n";
+        ss << "Comm Time:    " << comm_time << " ms\n";
+        ss << "Total Steps:  " << steps << "\n";
+        return ss.str();
     }
 
 private:
-    void cleanup() {
-        d_neurons.free();
-        d_rules.free();
-        d_local_synapses.free();
-        for (auto& nb : neighbors) {
-            nb.d_boundary_synapses.free();
-            if(nb.h_send_buffer) cudaFreeHost(nb.h_send_buffer);
-            if(nb.h_recv_buffer) cudaFreeHost(nb.h_recv_buffer);
-            if(nb.d_send_buffer) cudaFree(nb.d_send_buffer);
-            if(nb.d_recv_buffer) cudaFree(nb.d_recv_buffer);
-            if(nb.d_map_recv_to_local) cudaFree(nb.d_map_recv_to_local);
-        }
-        neighbors.clear();
-    }
+void prepareRules(const SnpSystemConfig& config) {
+        std::vector<int> h_nid, h_thresh, h_cons, h_prod, h_delay;
+        std::vector<int> h_start(local_num_neurons, 0); // Initialize to 0
+        std::vector<int> h_count(local_num_neurons, 0); // Initialize to 0
 
-    void loadLocalNeurons(const SnpSystemConfig& config) {
-        d_neurons.allocate(local_neuron_count);
-
-        if (local_neuron_count == 0) return;
-
-        std::vector<int> h_config(local_neuron_count);
-        std::vector<char> h_open(local_neuron_count, true); // Is boolean, but use char for cudaMemcpy
-        std::vector<int> h_zeros(local_neuron_count, 0);
-
-        // Rules host buffers
-        std::vector<int> h_thresh, h_cons, h_prod, h_delay;
-        std::vector<int> h_r_start(local_neuron_count), h_r_count(local_neuron_count);
-        int total_rules = 0;
-
-        for (int i = 0; i < local_neuron_count; ++i) {
-            int global_id = local_neuron_start + i;
-            const auto& n = config.neurons[global_id];
+        int rule_cursor = 0;
+        for (int i = 0; i < local_num_neurons; ++i) {
+            int global_id = local_start_idx + i;
+            const auto& neuron = config.neurons[global_id];
             
-            h_config[i] = n.initial_spikes;
-            h_r_start[i] = total_rules;
-            h_r_count[i] = n.rules.size();
+            h_start[i] = rule_cursor;
+            h_count[i] = neuron.rules.size();
             
-            for (const auto& r : n.rules) {
+            for (const auto& r : neuron.rules) {
+                h_nid.push_back(i); // Local ID
                 h_thresh.push_back(r.input_threshold);
                 h_cons.push_back(r.spikes_consumed);
                 h_prod.push_back(r.spikes_produced);
                 h_delay.push_back(r.delay);
-                total_rules++;
+                rule_cursor++;
             }
         }
 
-        // Upload Neurons
-        CUDA_CHECK(cudaMemcpy(d_neurons.configuration, h_config.data(), local_neuron_count * sizeof(int), cudaMemcpyHostToDevice));
-        CUDA_CHECK(cudaMemcpy(d_neurons.initial_config, h_config.data(), local_neuron_count * sizeof(int), cudaMemcpyHostToDevice));
-        CUDA_CHECK(cudaMemcpy(d_neurons.is_open, h_open.data(), local_neuron_count * sizeof(bool), cudaMemcpyHostToDevice));
-        CUDA_CHECK(cudaMemset(d_neurons.delay_timer, 0, local_neuron_count * sizeof(int)));
-        CUDA_CHECK(cudaMemset(d_neurons.pending_emission, 0, local_neuron_count * sizeof(int)));
+        // Allocate using the fixed logic
+        d_rules.allocate(rule_cursor, local_num_neurons);
 
-        // Upload Rules
-        d_rules.allocate(local_neuron_count, total_rules);
-        if (total_rules > 0) {
-            CUDA_CHECK(cudaMemcpy(d_rules.input_threshold, h_thresh.data(), total_rules * sizeof(int), cudaMemcpyHostToDevice));
-            CUDA_CHECK(cudaMemcpy(d_rules.spikes_consumed, h_cons.data(), total_rules * sizeof(int), cudaMemcpyHostToDevice));
-            CUDA_CHECK(cudaMemcpy(d_rules.spikes_produced, h_prod.data(), total_rules * sizeof(int), cudaMemcpyHostToDevice));
-            CUDA_CHECK(cudaMemcpy(d_rules.delay, h_delay.data(), total_rules * sizeof(int), cudaMemcpyHostToDevice));
-            CUDA_CHECK(cudaMemcpy(d_rules.rule_start_idx, h_r_start.data(), local_neuron_count * sizeof(int), cudaMemcpyHostToDevice));
-            CUDA_CHECK(cudaMemcpy(d_rules.rule_count, h_r_count.data(), local_neuron_count * sizeof(int), cudaMemcpyHostToDevice));
+        // Upload Rule Arrays (Only if rules exist)
+        if (rule_cursor > 0) {
+            CUDA_CHECK(cudaMemcpy(d_rules.neuron_id, h_nid.data(), rule_cursor * sizeof(int), cudaMemcpyHostToDevice));
+            CUDA_CHECK(cudaMemcpy(d_rules.input_threshold, h_thresh.data(), rule_cursor * sizeof(int), cudaMemcpyHostToDevice));
+            CUDA_CHECK(cudaMemcpy(d_rules.spikes_consumed, h_cons.data(), rule_cursor * sizeof(int), cudaMemcpyHostToDevice));
+            CUDA_CHECK(cudaMemcpy(d_rules.spikes_produced, h_prod.data(), rule_cursor * sizeof(int), cudaMemcpyHostToDevice));
+            CUDA_CHECK(cudaMemcpy(d_rules.delay, h_delay.data(), rule_cursor * sizeof(int), cudaMemcpyHostToDevice));
+        }
+
+        // Upload Neuron Maps (ALWAYS if neurons exist)
+        if (local_num_neurons > 0) {
+            CUDA_CHECK(cudaMemcpy(d_rules.rule_start_idx, h_start.data(), local_num_neurons * sizeof(int), cudaMemcpyHostToDevice));
+            CUDA_CHECK(cudaMemcpy(d_rules.rule_count, h_count.data(), local_num_neurons * sizeof(int), cudaMemcpyHostToDevice));
         }
     }
+    
+    void prepareTopology(const SnpSystemConfig& config) {
+        // --- 1. Identify Ranges for all ranks ---
+        std::vector<std::pair<int, int>> rank_ranges(mpi_size);
+        int base = global_num_neurons / mpi_size;
+        int rem = global_num_neurons % mpi_size;
+        for (int r = 0; r < mpi_size; ++r) {
+            int n = (r < rem) ? base + 1 : base;
+            int start = (r < rem) ? r * n : rem * (base + 1) + (r - rem) * base;
+            rank_ranges[r] = {start, start + n};
+        }
 
-    void analyzeSynapses(const SnpSystemConfig& config) {
-        // 1. Identify owner of each neuron (simple calc due to block partition)
-        auto get_owner = [&](int nid) {
-            int n_per_rank = (global_num_neurons + mpi_size - 1) / mpi_size;
-            return nid / n_per_rank;
-        };
-        auto get_local_idx = [&](int nid, int rank) {
-            int n_per_rank = (global_num_neurons + mpi_size - 1) / mpi_size;
-            return nid - (rank * n_per_rank);
-        };
-
-        // Temporary storage
+        // --- 2. Classify Synapses ---
         std::vector<int> loc_src, loc_dst, loc_w;
-        std::map<int, std::vector<std::tuple<int, int, int>>> remote_sends; // Rank -> {src_local, dest_global, weight}
-        std::map<int, std::vector<int>> remote_recvs; // Rank -> {dest_local_on_my_node}
+        std::map<int, std::vector<std::pair<int, int>>> export_map; // TargetRank -> vector<{source_local_id, global_dest_id * weight}>
+        // Note: For export map, to handle weights correctly in the buffer logic, 
+        // we actually need to aggregate (spikes * weight) at the destination.
+        // HOWEVER, to keep buffer simple (just spike counts), we should apply weight at SENDER if possible.
+        // BUT weight is per synapse. If N1->N2(w=2) and N3->N2(w=1), we can't sum spikes from N1 and N3 simply.
+        // SOLUTION: The Export Buffer represents "Spikes Arriving at Unique Destination D from Local Rank".
+        // The sender accumulates `production * weight` into the buffer slot for D.
+        
+        // We need to know the Unique Remote Destinations per rank to build the fixed buffers.
+        std::map<int, std::set<int>> remote_targets_per_rank; // Rank -> Set of Global Dest IDs
 
-        // Pass 1: Categorize Outgoing Synapses
         for (const auto& syn : config.synapses) {
-            int src_owner = get_owner(syn.source_id);
-            int dst_owner = get_owner(syn.dest_id);
-
-            // If I own the source
-            if (src_owner == mpi_rank) {
-                int src_local = get_local_idx(syn.source_id, mpi_rank);
+            bool src_is_local = (syn.source_id >= local_start_idx && syn.source_id < local_end_idx);
+            
+            if (src_is_local) {
+                bool dst_is_local = (syn.dest_id >= local_start_idx && syn.dest_id < local_end_idx);
+                int local_src = syn.source_id - local_start_idx;
                 
-                if (dst_owner == mpi_rank) {
-                    // Local-Local
-                    loc_src.push_back(src_local);
-                    loc_dst.push_back(get_local_idx(syn.dest_id, mpi_rank));
+                if (dst_is_local) {
+                    loc_src.push_back(local_src);
+                    loc_dst.push_back(syn.dest_id - local_start_idx);
                     loc_w.push_back(syn.weight);
                 } else {
-                    // Local-Remote
-                    remote_sends[dst_owner].emplace_back(src_local, syn.dest_id, syn.weight);
+                    // Find target rank
+                    int target_rank = -1;
+                    for(int r=0; r<mpi_size; ++r) {
+                        if (syn.dest_id >= rank_ranges[r].first && syn.dest_id < rank_ranges[r].second) {
+                            target_rank = r;
+                            break;
+                        }
+                    }
+                    if (target_rank != -1) {
+                        remote_targets_per_rank[target_rank].insert(syn.dest_id);
+                    }
                 }
-            }
-            
-            // If I own the dest (Recv calculation)
-            if (dst_owner == mpi_rank && src_owner != mpi_rank) {
-                // Incoming from remote
-                // We just need to know which of our local neurons is the target
-                // to map the incoming buffer.
-                // NOTE: We need a canonical ordering so Sender and Receiver agree on buffer layout.
-                // We sort by (Source Global ID, Dest Global ID). 
-                // Since we iterate synapses in order, let's assume config.synapses is sorted or we sort.
             }
         }
 
-        // Upload Local-Local Synapses
+        // --- 3. Build Communication Maps (The Handshake) ---
+        // We need to agree on the order of neurons in the buffers.
+        // We use the natural sort order of Global IDs.
+        
+        comm_map.resize(mpi_size);
+        
+        // Setup Export Buffers (What I send)
+        std::vector<int> exp_src, exp_buf_idx, exp_w;
+        int current_export_offset = 0;
+
+        for (int r = 0; r < mpi_size; ++r) {
+            if (r == mpi_rank) continue;
+
+            // My targets in Rank R
+            std::vector<int> targets(remote_targets_per_rank[r].begin(), remote_targets_per_rank[r].end());
+            
+            comm_map[r].export_offset = current_export_offset;
+            comm_map[r].export_count = targets.size();
+            comm_map[r].h_send_buf.resize(targets.size());
+            
+            // Map global dest ID -> Index in this rank's specific export chunk
+            std::map<int, int> dest_to_chunk_idx;
+            for(size_t i=0; i<targets.size(); ++i) {
+                dest_to_chunk_idx[targets[i]] = current_export_offset + i;
+            }
+            current_export_offset += targets.size();
+
+            // Re-scan synapses to build the GPU Export Synapse list
+            for (const auto& syn : config.synapses) {
+                if (syn.source_id >= local_start_idx && syn.source_id < local_end_idx) { // I am source
+                    if (dest_to_chunk_idx.count(syn.dest_id)) {
+                        exp_src.push_back(syn.source_id - local_start_idx);
+                        exp_buf_idx.push_back(dest_to_chunk_idx[syn.dest_id]);
+                        exp_w.push_back(syn.weight);
+                    }
+                }
+            }
+        }
+        total_export_size = current_export_offset;
+
+        // Setup Import Buffers (What I receive)
+        // I need to know what Rank R is sending me.
+        // Rank R sends me data for neurons IT touches in MY range.
+        // This requires "Global Knowledge" of the config, which we have.
+        
+        std::vector<int> imp_buf_idx, imp_dst;
+        int current_import_offset = 0;
+
+        for (int r = 0; r < mpi_size; ++r) {
+            if (r == mpi_rank) continue;
+
+            // Find unique neurons in ME that Rank R touches
+            std::set<int> incoming_targets;
+            for (const auto& syn : config.synapses) {
+                // If source is in Rank R AND dest is in ME
+                if (syn.source_id >= rank_ranges[r].first && syn.source_id < rank_ranges[r].second) {
+                    if (syn.dest_id >= local_start_idx && syn.dest_id < local_end_idx) {
+                        incoming_targets.insert(syn.dest_id);
+                    }
+                }
+            }
+
+            std::vector<int> targets(incoming_targets.begin(), incoming_targets.end());
+            
+            comm_map[r].import_offset = current_import_offset;
+            comm_map[r].import_count = targets.size();
+            comm_map[r].h_recv_buf.resize(targets.size());
+
+            // Map buffer index -> Local Neuron
+            for (size_t i = 0; i < targets.size(); ++i) {
+                imp_buf_idx.push_back(current_import_offset + i);
+                imp_dst.push_back(targets[i] - local_start_idx);
+            }
+            current_import_offset += targets.size();
+        }
+        total_import_size = current_import_offset;
+
+        // --- 4. Allocate and Upload to GPU ---
+        
+        // Local Synapses
         d_local_synapses.allocate(loc_src.size());
         if (!loc_src.empty()) {
-            CUDA_CHECK(cudaMemcpy(d_local_synapses.source_local_idx, loc_src.data(), loc_src.size() * sizeof(int), cudaMemcpyHostToDevice));
-            CUDA_CHECK(cudaMemcpy(d_local_synapses.dest_local_idx, loc_dst.data(), loc_dst.size() * sizeof(int), cudaMemcpyHostToDevice));
+            CUDA_CHECK(cudaMemcpy(d_local_synapses.source_idx, loc_src.data(), loc_src.size() * sizeof(int), cudaMemcpyHostToDevice));
+            CUDA_CHECK(cudaMemcpy(d_local_synapses.dest_idx, loc_dst.data(), loc_dst.size() * sizeof(int), cudaMemcpyHostToDevice));
             CUDA_CHECK(cudaMemcpy(d_local_synapses.weight, loc_w.data(), loc_w.size() * sizeof(int), cudaMemcpyHostToDevice));
         }
 
-        // Process Neighbors (Both Send and Recv)
-        // We need to agree on buffer layout with neighbors.
-        // Protocol: For Pair (Rank A, Rank B), buffer contains spikes for Unique Dst Neurons on B.
-        // Sorted by Dest Neuron ID.
-        
-        for (int other_rank = 0; other_rank < mpi_size; ++other_rank) {
-            if (other_rank == mpi_rank) continue;
-
-            // 1. Calculate Send Map (What I send to Other)
-            // Identify unique (DestID) on OtherRank that I touch.
-            std::map<int, int> dest_global_to_buffer_idx;
-            int buffer_idx_counter = 0;
-
-            // Sort sends to ensure deterministic buffer layout
-            auto& sends = remote_sends[other_rank];
-            // To match receiver, we must process unique DestIDs in increasing order
-            std::map<int, std::vector<std::pair<int, int>>> grouped_by_dest; // DestGlobal -> {SrcLocal, Weight}
-            for(auto& t : sends) {
-                grouped_by_dest[std::get<1>(t)].push_back({std::get<0>(t), std::get<2>(t)});
-            }
-
-            // Flatten for GPU and assign buffer indices
-            std::vector<int> h_bound_src, h_bound_buf, h_bound_w;
-            for(auto& kv : grouped_by_dest) {
-                int dest_global = kv.first;
-                dest_global_to_buffer_idx[dest_global] = buffer_idx_counter++;
-                for(auto& pair : kv.second) {
-                    h_bound_src.push_back(pair.first); // Src Local
-                    h_bound_buf.push_back(dest_global_to_buffer_idx[dest_global]);
-                    h_bound_w.push_back(pair.second);
-                }
-            }
-
-            // 2. Calculate Recv Map (What Other sends to Me)
-            // I need to know which of my neurons Other is targeting.
-            // I iterate synapses where Src=Other, Dest=Me.
-            std::map<int, bool> my_neurons_targeted_by_other;
-            for(const auto& syn : config.synapses) {
-                if (get_owner(syn.source_id) == other_rank && get_owner(syn.dest_id) == mpi_rank) {
-                    my_neurons_targeted_by_other[syn.dest_id] = true;
-                }
-            }
-            
-            // Map buffer index 0..N to local neuron index
-            std::vector<int> h_map_recv;
-            for(auto const& [dest_global, _] : my_neurons_targeted_by_other) {
-                h_map_recv.push_back(get_local_idx(dest_global, mpi_rank));
-            }
-
-            // Only add neighbor if there is traffic
-            if (buffer_idx_counter > 0 || !h_map_recv.empty()) {
-                NeighborComm nb;
-                nb.rank = other_rank;
-                nb.send_count = buffer_idx_counter;
-                nb.recv_count = h_map_recv.size();
-                
-                // Allocate Send Structures
-                nb.d_boundary_synapses.allocate(h_bound_src.size());
-                if (nb.send_count > 0) {
-                    CUDA_CHECK(cudaMemcpy(nb.d_boundary_synapses.source_local_idx, h_bound_src.data(), h_bound_src.size()*sizeof(int), cudaMemcpyHostToDevice));
-                    CUDA_CHECK(cudaMemcpy(nb.d_boundary_synapses.buffer_idx, h_bound_buf.data(), h_bound_buf.size()*sizeof(int), cudaMemcpyHostToDevice));
-                    CUDA_CHECK(cudaMemcpy(nb.d_boundary_synapses.weight, h_bound_w.data(), h_bound_w.size()*sizeof(int), cudaMemcpyHostToDevice));
-                    
-                    CUDA_CHECK(cudaHostAlloc(&nb.h_send_buffer, nb.send_count * sizeof(int), cudaHostAllocDefault));
-                    CUDA_CHECK(cudaMalloc(&nb.d_send_buffer, nb.send_count * sizeof(int)));
-                } else {
-                    nb.h_send_buffer = nullptr; nb.d_send_buffer = nullptr;
-                }
-
-                // Allocate Recv Structures
-                if (nb.recv_count > 0) {
-                    CUDA_CHECK(cudaHostAlloc(&nb.h_recv_buffer, nb.recv_count * sizeof(int), cudaHostAllocDefault));
-                    CUDA_CHECK(cudaMalloc(&nb.d_recv_buffer, nb.recv_count * sizeof(int)));
-                    CUDA_CHECK(cudaMalloc(&nb.d_map_recv_to_local, nb.recv_count * sizeof(int)));
-                    CUDA_CHECK(cudaMemcpy(nb.d_map_recv_to_local, h_map_recv.data(), nb.recv_count * sizeof(int), cudaMemcpyHostToDevice));
-                } else {
-                    nb.h_recv_buffer = nullptr; nb.d_recv_buffer = nullptr; nb.d_map_recv_to_local = nullptr;
-                }
-
-                neighbors.push_back(nb);
-            }
+        // Export Synapses
+        d_export_synapses.allocate(exp_src.size());
+        if (!exp_src.empty()) {
+            CUDA_CHECK(cudaMemcpy(d_export_synapses.source_idx, exp_src.data(), exp_src.size() * sizeof(int), cudaMemcpyHostToDevice));
+            CUDA_CHECK(cudaMemcpy(d_export_synapses.export_buf_idx, exp_buf_idx.data(), exp_buf_idx.size() * sizeof(int), cudaMemcpyHostToDevice));
+            CUDA_CHECK(cudaMemcpy(d_export_synapses.weight, exp_w.data(), exp_w.size() * sizeof(int), cudaMemcpyHostToDevice));
         }
+
+        // Import Map
+        d_import_map.allocate(imp_buf_idx.size());
+        if (!imp_buf_idx.empty()) {
+            CUDA_CHECK(cudaMemcpy(d_import_map.import_buf_idx, imp_buf_idx.data(), imp_buf_idx.size() * sizeof(int), cudaMemcpyHostToDevice));
+            CUDA_CHECK(cudaMemcpy(d_import_map.dest_idx, imp_dst.data(), imp_dst.size() * sizeof(int), cudaMemcpyHostToDevice));
+        }
+
+        // Monolithic Buffers
+        if (total_export_size > 0) CUDA_CHECK(cudaMalloc(&d_export_buffer, total_export_size * sizeof(int)));
+        if (total_import_size > 0) CUDA_CHECK(cudaMalloc(&d_import_buffer, total_import_size * sizeof(int)));
     }
 };
 
-// Factory Function
 std::unique_ptr<ISnpSimulator> createCudaMpiSimulator() {
     return std::make_unique<CudaMpiSnpSimulator>();
 }

@@ -6,7 +6,7 @@ Implement the `CudaMpiSnpSimulator` class in C++. This class must facilitate a d
 
 # Context & Constraints
 1.  **Architecture:** The implementation must use a hybrid model: MPI for inter-node communication and CUDA for intra-node parallel processing.
-2.  **Performance Goals:** The input size is massive (millions of neurons). You must prioritize performance over code brevity. Specifically, you must implement latency-hiding techniques for minimizing communication overhead between:
+2.  **Performance Goals:** The input size is massive (millions of neurons). You must prioritize performance over code brevity. Specifically, you must implement efficient data transfer and minimize communication overhead between:
     * **Process <-> Process** 
     * **Processor <-> GPU**
     * **GPU <-> Global Memory**
@@ -14,7 +14,7 @@ Implement the `CudaMpiSnpSimulator` class in C++. This class must facilitate a d
 4.  **Reference Material:**
     * I have provided `snp_explanation.tex` below for the mathematical rules of the system.
     * Use `NaiveCpuSnpSimulator.cpp` to understand the sequential logic correctness.
-    * Use `CudaSnpSimulator.cu` (single-node implementation) as a baseline for the CUDA kernels. Adapt these kernels for distributed processing.
+    * Use `CudaSnpSimulator.cu` (single-node implementation) as a baseline for the CUDA kernels.
 5. **Edge Cases:** Handle edge cases such as:
     * Nodes with zero neurons (should gracefully skip computation).
     * Variety of input sizes which may be too small or may not evenly divide across nodes

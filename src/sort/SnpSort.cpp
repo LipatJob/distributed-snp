@@ -28,11 +28,24 @@ private:
         int N = inputNumbers.size();
         if (N == 0) return {};
 
-        // Determine max value to calculate simulation ticks needed
-        int maxVal = 0;
+        // Find min and max values
+        int minVal = inputNumbers[0];
+        int maxVal = inputNumbers[0];
         for(int n : inputNumbers) {
+            if(n < minVal) minVal = n;
             if(n > maxVal) maxVal = n;
         }
+        
+        // Offset to make all values non-negative (SNP systems can't have negative spikes)
+        int offset = (minVal < 0) ? -minVal : 0;
+        std::vector<int> transformedNumbers;
+        transformedNumbers.reserve(N);
+        for(int n : inputNumbers) {
+            transformedNumbers.push_back(n + offset);
+        }
+        
+        // Update maxVal with offset
+        maxVal += offset;
         
         // Layout: [ Inputs (0..N-1) | Sorters (N..2N-1) | Outputs (2N..3N-1) ]
         int startInput = 0;
@@ -68,7 +81,7 @@ private:
         // Input Streams (Neurons 0 to N-1)
         for(int i = 0; i < N; ++i) {
             int neuronId = startInput + i;
-            int spikes = inputNumbers[i];
+            int spikes = transformedNumbers[i];  // Use transformed (non-negative) values
             
             // Reset neuron with initial spikes
             builder.addNeuron(neuronId, spikes);
@@ -119,13 +132,13 @@ private:
         std::vector<int> localState = simulator->getGlobalState();
         std::vector<int> result;
         
-        // Extract output neuron values
+        // Extract output neuron values and transform back to original range
         for(int o = 0; o < N; ++o) {
             int outputIdx = startOutput + o;
             if (outputIdx < static_cast<int>(localState.size())) {
-                result.push_back(localState[outputIdx]);
+                result.push_back(localState[outputIdx] - offset);  // Subtract offset to restore original values
             } else {
-                result.push_back(0);
+                result.push_back(-offset);  // Default should also account for offset
             }
         }
         

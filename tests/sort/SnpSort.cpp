@@ -1,5 +1,7 @@
 #include <mpi.h>
 #include <gtest/gtest.h>
+#include <algorithm>
+#include <vector>
 #include "ISort.hpp"
 
 enum class SortBackend {
@@ -18,8 +20,6 @@ std::unique_ptr<ISort> createSorter(SortBackend backend) {
             return createCudaSnpSort();
         case SortBackend::CUDA_MPI_SNP_SORT:
             return createCudaMpiSnpSort();
-        // case SortBackend::NAIVE_CUDA_MPI_SNP_SORT:
-        //     return createNaiveCudaMpiSnpSort();
         default:
             return nullptr;
     }
@@ -132,21 +132,22 @@ TEST_P(SnpSortTest, SortWithZeros) {
     }
 }
 
-// Performance test with medium-sized array
-TEST_P(SnpSortTest, SortMediumArray) {
-    const size_t size = 20;
-    std::vector<int> data(size);
-    
-    // Fill with descending values
-    for (size_t i = 0; i < size; ++i) {
-        data[i] = size - i;
-    }
-    
-    sorter->sort(data.data(), size);
-    
-    // Verify sorted
-    for (size_t i = 0; i < size; ++i) {
-        EXPECT_EQ(data[i], i + 1);
+// Performance test with various array sizes from 20 to 100
+TEST_P(SnpSortTest, SortVariousSizes) {
+    for (size_t size = 20; size <= 100; ++size) {
+        std::vector<int> data(size);
+        
+        // Fill with descending values
+        for (size_t i = 0; i < size; ++i) {
+            data[i] = size - i;
+        }
+        
+        sorter->sort(data.data(), size);
+        
+        // Verify sorted
+        for (size_t i = 0; i < size; ++i) {
+            EXPECT_EQ(data[i], i + 1) << "Failed at size " << size << ", index " << i;
+        }
     }
 }
 
@@ -154,17 +155,15 @@ INSTANTIATE_TEST_SUITE_P(
     AllBackends,
     SnpSortTest,
     ::testing::Values(
-        SortBackend::NAIVE_CPU_SNP_SORT
-        , SortBackend::CUDA_SNP_SORT
-        // SortBackend::CUDA_MPI_SNP_SORT
-        // SortBackend::NAIVE_CUDA_MPI_SNP_SORT
+        SortBackend::NAIVE_CPU_SNP_SORT,
+        SortBackend::CUDA_SNP_SORT,
+        SortBackend::CUDA_MPI_SNP_SORT
     ),
     [](const ::testing::TestParamInfo<SortBackend>& info) {
         switch (info.param) {
             case SortBackend::NAIVE_CPU_SNP_SORT: return "NaiveCpuSnpSort";
             case SortBackend::CUDA_SNP_SORT: return "CudaSnpSort";
-            // case SortBackend::CUDA_MPI_SNP_SORT: return "CudaMpiSnpSort";
-            // case SortBackend::NAIVE_CUDA_MPI_SNP_SORT: return "NaiveCudaMpiSnpSort";
+            case SortBackend::CUDA_MPI_SNP_SORT: return "CudaMpiSnpSort";
             default: return "Unknown";
         }
     }

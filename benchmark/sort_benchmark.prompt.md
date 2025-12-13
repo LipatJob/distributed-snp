@@ -123,7 +123,6 @@ Ensure benchmarks include:
 - **Modify system configuration**: Adjust `SnpSystemConfig` to include performance metadata
 
 ### Guidelines
-- Maintain backward compatibility when possible
 - Document all modifications clearly
 - Preserve correctness of sorting algorithm
 - Use conditional compilation (`#ifdef BENCHMARK_MODE`) for invasive changes
