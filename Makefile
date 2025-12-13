@@ -1,195 +1,134 @@
 # Makefile for distributed-snp project
-# Convenience wrapper around CMake
+# Optimized for Caching, Parallelism, and HPC Deployment
 
-BUILD_DIR := build
-BUILD_TYPE ?= Release
+# --- Configuration ---
+BUILD_DIR   := build
+BUILD_TYPE  ?= Release
+CXX         ?= g++
+NVCC        ?= nvcc
+MPICC       ?= mpicxx
+CUDA_ARCH   ?= 75
 
-# Compiler settings
-CXX ?= g++
-NVCC ?= nvcc
-MPICC ?= mpicxx
-
-# Build parallelization
+# Auto-detect parallelism
 JOBS ?= $(shell nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)
 
-# CUDA architectures
-CUDA_ARCH ?= 75
-
-# Distribution settings
-NODES ?= localhost 10.0.0.2
+# Deployment Settings
+NODES       ?= localhost 10.0.0.2
 REMOTE_USER ?= $(USER)
-REMOTE_DIR ?= ~/distributed-snp-new
-HOSTFILE ?= hostfile.txt
+REMOTE_DIR  ?= /home/shared/tmp/distributed-snp-new
+HOSTFILE    ?= hostfile.txt
 
-# Colors
-GREEN := \033[0;32m
+# --- Caching & Optimization Tools ---
+# Auto-detect ccache for faster recompilation
+CCACHE_EXE := $(shell command -v ccache 2> /dev/null)
+ifdef CCACHE_EXE
+    CMAKE_CCACHE_OPT := -DCMAKE_CXX_COMPILER_LAUNCHER=$(CCACHE_EXE) -DCMAKE_CUDA_COMPILER_LAUNCHER=$(CCACHE_EXE)
+endif
+
+# Auto-detect Ninja for faster build generation
+NINJA_EXE := $(shell command -v ninja 2> /dev/null)
+ifdef NINJA_EXE
+    CMAKE_GEN_OPT := -G Ninja
+else
+    CMAKE_GEN_OPT :=
+endif
+
+# --- Colors ---
+GREEN  := \033[0;32m
 YELLOW := \033[0;33m
-BLUE := \033[0;34m
-NC := \033[0m
+BLUE   := \033[0;34m
+NC     := \033[0m
 
-.PHONY: all help configure build debug release clean rebuild install check-deps lint \
+# --- Main Targets ---
+.PHONY: all help build clean rebuild install distclean \
+        lint format compile-commands \
         generate-hostfile distribute check-nodes \
-        deploy-tests test-distributed run-distributed \
-        benchmark-sort benchmark-distributed compare-benchmarks visualize-benchmarks benchmark-and-visualize
+        test benchmark benchmark-viz profile
 
-# Default target
 all: build
 
-help:
-	@echo "$(GREEN)Build Targets:$(NC)"
-	@echo "  all               - Build the project (default)"
-	@echo "  configure         - Configure CMake build"
-	@echo "  build             - Build all targets"
-	@echo "  debug             - Build with debug symbols"
-	@echo "  release           - Build with optimizations"
-	@echo "  clean             - Remove build directory"
-	@echo "  rebuild           - Clean and build"
-	@echo "  install           - Install libraries and headers"
-	@echo "  check-deps        - Verify required dependencies"
-	@echo "  lint              - Run linter on source files"
-	@echo ""
-	@echo "$(GREEN)Distribution Targets:$(NC)"
-	@echo "  generate-hostfile - Generate MPI hostfile"
-	@echo "  distribute        - Copy binaries to remote nodes"
-	@echo "  check-nodes       - Check connectivity to remote nodes"
-	@echo "  deploy-tests      - Deploy test executable to remote nodes"
-	@echo "  test-distributed  - Deploy and run tests across nodes"
-	@echo "  run-distributed   - Run demo on distributed nodes"
-	@echo ""
-	@echo "$(GREEN)Benchmark Targets:$(NC)"
-	@echo "  benchmark-sort           - Run sort benchmarks locally"
-	@echo "  benchmark-distributed    - Run sort benchmarks across distributed nodes"
-	@echo "  compare-benchmarks       - Compare benchmark results (text)"
-	@echo "  visualize-benchmarks     - Generate visualization plots from results"
-	@echo "  benchmark-and-visualize  - Run benchmarks and auto-generate visualizations"
-	@echo ""
-	@echo "$(GREEN)Variables:$(NC)"
-	@echo "  BUILD_TYPE        - Release or Debug (default: Release)"
-	@echo "  CUDA_ARCH         - CUDA architectures (default: 75)"
-	@echo "  JOBS              - Parallel jobs (default: auto-detected)"
-	@echo "  CXX               - C++ compiler (default: g++)"
-	@echo "  NVCC              - CUDA compiler (default: nvcc)"
-	@echo "  MPICC             - MPI compiler (default: mpicxx)"
-	@echo "  NODES             - Space-separated nodes (default: localhost 10.0.0.2)"
-	@echo "  REMOTE_USER       - Username for remote nodes (default: current user)"
-	@echo "  REMOTE_DIR        - Remote directory (default: ~/distributed-snp-new)"
-	@echo "  HOSTFILE          - MPI hostfile path (default: hostfile.txt)"
+# Dynamic Help Generation
+help: ## Show this help message
+	@echo "$(BLUE)Distributed SNP Build System$(NC)"
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "  $(GREEN)%-25s$(NC) %s\n", $$1, $$2}'
 
-configure:
-	@echo "$(GREEN)Configuring CMake...$(NC)"
-	@mkdir -p $(BUILD_DIR)
-	@cd $(BUILD_DIR) && cmake .. \
+# --- Build System ---
+
+# Only run cmake if cache doesn't exist or CMakeLists changed
+$(BUILD_DIR)/CMakeCache.txt: CMakeLists.txt
+	@echo "$(BLUE)Configuring CMake ($(BUILD_TYPE))...$(NC)"
+	@cmake -B $(BUILD_DIR) -S . \
+		$(CMAKE_GEN_OPT) \
+		$(CMAKE_CCACHE_OPT) \
 		-DCMAKE_BUILD_TYPE=$(BUILD_TYPE) \
-		-DCMAKE_CXX_COMPILER=$(CXX) \
-		-DCMAKE_CUDA_ARCHITECTURES="$(CUDA_ARCH)"
+		-DCMAKE_CUDA_ARCHITECTURES=$(CUDA_ARCH)
 
-build: configure
-	@echo "$(GREEN)Building...$(NC)"
+build: $(BUILD_DIR)/CMakeCache.txt ## Build the project (incremental)
+	@echo "$(GREEN)Building project...$(NC)"
 	@cmake --build $(BUILD_DIR) -j $(JOBS)
-	@echo "$(GREEN)Build complete!$(NC)"
 
-debug:
-	@$(MAKE) build BUILD_TYPE=Debug
+clean: ## Clean build artifacts
+	@echo "$(YELLOW)Cleaning build directory...$(NC)"
+	@cmake --build $(BUILD_DIR) --target clean 2>/dev/null || rm -rf $(BUILD_DIR)
 
-release:
-	@$(MAKE) build BUILD_TYPE=Release
+distclean: ## Deep clean (removes build dir entirely)
+	@rm -rf $(BUILD_DIR) $(HOSTFILE)
 
-clean:
-	@echo "$(YELLOW)Cleaning...$(NC)"
-	@rm -rf $(BUILD_DIR)
-	@echo "$(GREEN)Done!$(NC)"
+rebuild: distclean build ## Full clean and rebuild
 
-rebuild: clean all
-
-install: build
-	@echo "$(GREEN)Installing...$(NC)"
+install: build ## Install binaries
 	@cmake --install $(BUILD_DIR)
 
-check-deps:
-	@echo "$(GREEN)Checking dependencies...$(NC)"
-	@command -v cmake >/dev/null 2>&1 || { echo "$(YELLOW)cmake not found$(NC)"; exit 1; }
-	@command -v $(CXX) >/dev/null 2>&1 || { echo "$(YELLOW)$(CXX) not found$(NC)"; exit 1; }
-	@command -v $(NVCC) >/dev/null 2>&1 || { echo "$(YELLOW)$(NVCC) not found$(NC)"; exit 1; }
-	@command -v $(MPICC) >/dev/null 2>&1 || { echo "$(YELLOW)$(MPICC) not found$(NC)"; exit 1; }
-	@echo "$(GREEN)All dependencies found!$(NC)"
+compile-commands: $(BUILD_DIR)/CMakeCache.txt ## Link compile_commands.json for LSP support
+	@ln -sf $(BUILD_DIR)/compile_commands.json .
 
-lint:
+# --- Code Quality ---
+
+lint: ## Run clang-tidy
 	@echo "$(GREEN)Running linter...$(NC)"
-	@command -v clang-tidy >/dev/null 2>&1 || { echo "$(YELLOW)clang-tidy not found. Install with: apt install clang-tidy$(NC)"; exit 1; }
-	@find src tests -type f \( -name '*.cpp' -o -name '*.hpp' \) -print0 | \
-		xargs -0 -P$(JOBS) -I{} sh -c 'echo "Linting {}..." && clang-tidy {} -- -std=c++17 -I./src' || true
-	@echo "$(GREEN)Linting complete!$(NC)"
+	@cmake --build $(BUILD_DIR) --target lint 2>/dev/null || \
+	find src tests -type f \( -name '*.cpp' -o -name '*.hpp' \) -print0 | \
+	xargs -0 -P$(JOBS) -I{} clang-tidy {} -- -std=c++17 -I./src
 
-generate-hostfile:
+# --- Distribution & MPI ---
+
+generate-hostfile: ## Generate MPI hostfile from NODES variable
 	@echo "$(GREEN)Generating hostfile...$(NC)"
 	@rm -f $(HOSTFILE)
-	@for node in $(NODES); do \
-		echo "$$node slots=1" >> $(HOSTFILE); \
-	done
-	@echo "$(GREEN)Generated: $(HOSTFILE)$(NC)"
+	@for node in $(NODES); do echo "$$node slots=1" >> $(HOSTFILE); done
 	@cat $(HOSTFILE)
 
-distribute: build
-	@echo "$(GREEN)Distributing binaries...$(NC)"
+distribute: build ## Deploy binaries to nodes using rsync (Fast)
+	@echo "$(GREEN)Distributing binaries (using rsync)...$(NC)"
 	@for node in $(NODES); do \
-		echo "$(BLUE)Copying to $$node...$(NC)"; \
-		scp -r $(BUILD_DIR)/bin $(REMOTE_USER)@$$node:$(REMOTE_DIR)/; \
-		scp -r $(BUILD_DIR)/lib $(REMOTE_USER)@$$node:$(REMOTE_DIR)/; \
-		echo "$(GREEN)✓ $$node$(NC)"; \
+		echo "$(BLUE)Syncing to $$node...$(NC)"; \
+		ssh $(REMOTE_USER)@$$node "mkdir -p $(REMOTE_DIR)"; \
+		rsync -azP --delete $(BUILD_DIR)/bin $(BUILD_DIR)/lib $(REMOTE_USER)@$$node:$(REMOTE_DIR)/; \
 	done
 	@echo "$(GREEN)Distribution complete!$(NC)"
 
-check-nodes:
-	@echo "$(GREEN)Checking connectivity...$(NC)"
+check-nodes: ## Verify SSH connectivity to nodes
+	@echo "$(GREEN)Checking node connectivity...$(NC)"
 	@for node in $(NODES); do \
-		echo -n "  $$node: "; \
-		ssh -o ConnectTimeout=5 $(REMOTE_USER)@$$node "echo '$(GREEN)✓$(NC)'" 2>/dev/null || echo "$(YELLOW)✗$(NC)"; \
+		printf "  %-15s " "$$node:"; \
+		ssh -o ConnectTimeout=3 $(REMOTE_USER)@$$node "echo 'OK'" >/dev/null 2>&1 \
+		&& echo "$(GREEN)✓$(NC)" || echo "$(YELLOW)✗$(NC)"; \
 	done
 
-deploy-tests: build
-	@echo "$(GREEN)Deploying tests...$(NC)"
-	@chmod +x scripts/deploy_tests.sh
-	@./scripts/deploy_tests.sh
-	@echo "$(GREEN)Done!$(NC)"
+# --- Execution Wrappers ---
 
-test-distributed: deploy-tests
+test: distribute ## Run distributed tests
 	@echo "$(GREEN)Running distributed tests...$(NC)"
-	@chmod +x scripts/run_distributed_tests.sh
-	@./scripts/run_distributed_tests.sh
+	@./scripts/run_tests.sh $(ARGS)
 
-run-distributed: distribute generate-hostfile
-	@echo "$(GREEN)Running on distributed nodes...$(NC)"
-	@mpirun --hostfile $(HOSTFILE) \
-		--mca btl_tcp_if_include ens5 \
-		--mca oob_tcp_if_include ens5 \
-		$(REMOTE_DIR)/bin/matrix_demo
+benchmark: distribute ## Run benchmarks
+	@echo "$(GREEN)Running benchmarks...$(NC)"
+	@./scripts/run_benchmark.sh $(ARGS)
 
-# ============================================================================
-# Benchmark Targets
-# ============================================================================
-
-benchmark-sort: build
-	@echo "$(GREEN)Running sort benchmarks locally...$(NC)"
-	@chmod +x scripts/run_benchmark.sh
-	@./scripts/run_benchmark.sh
-
-benchmark-distributed: build
-	@echo "$(GREEN)Running distributed sort benchmarks...$(NC)"
-	@chmod +x scripts/run_distributed_benchmark.sh
-	@./scripts/run_distributed_benchmark.sh $(BENCHMARK_ARGS)
-
-compare-benchmarks:
-	@echo "$(GREEN)Comparing benchmark results...$(NC)"
-	@chmod +x scripts/compare_benchmarks.py
-	@./scripts/compare_benchmarks.py benchmark_results/*.json || echo "$(YELLOW)No benchmark results found. Run benchmarks first.$(NC)"
-
-visualize-benchmarks:
-	@echo "$(GREEN)Visualizing benchmark results...$(NC)"
-	@chmod +x scripts/visualize_benchmarks.py
-	@mkdir -p benchmark_results
-	@./scripts/visualize_benchmarks.py benchmark_results/*.json || echo "$(YELLOW)No benchmark results found. Run benchmarks first.$(NC)"
-
-benchmark-and-visualize: build
-	@echo "$(GREEN)Running benchmarks with automatic visualization...$(NC)"
-	@chmod +x scripts/benchmark_and_visualize.sh
+benchmark-viz: build ## Run benchmarks and visualize
+	@echo "$(GREEN)Running benchmarks + visualization...$(NC)"
 	@./scripts/benchmark_and_visualize.sh
+
+profile: distribute ## Profile implementations
+	@echo "$(GREEN)Profiling...$(NC)"
+	@./scripts/run_profiling.sh $(ARGS)
