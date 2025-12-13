@@ -88,6 +88,7 @@ add_library(snp_system STATIC
     src/snp/SparseCudaSnpSimulator.cu
     src/snp/NaiveCudaMpiSnpSimulator.cu
     src/snp/CudaMpiSnpSimulator.cu
+    src/snp/LouvainPartitioner.cpp
 )
 set_target_properties(snp_system PROPERTIES
     CUDA_SEPARABLE_COMPILATION ON
