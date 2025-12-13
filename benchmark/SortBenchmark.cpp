@@ -420,6 +420,9 @@ BENCHMARK_REGISTER_F(SortBenchmarkFixture, NaiveCudaMpiSnpSort_1000_1000_RANDOM)
 BENCHMARK_SORT_IMPL(NaiveCudaMpiSnpSort, createNaiveCudaMpiSnpSorter, 1000, 1000, NEARLY_SORTED)
 BENCHMARK_REGISTER_F(SortBenchmarkFixture, NaiveCudaMpiSnpSort_1000_1000_NEARLY_SORTED)->Unit(benchmark::kMillisecond)->Iterations(1);
 
+// Large inputs
+BENCHMARK_SORT_IMPL(NaiveCudaMpiSnpSort, createNaiveCudaMpiSnpSorter, 2000, 2000, RANDOM)
+BENCHMARK_REGISTER_F(SortBenchmarkFixture, NaiveCudaMpiSnpSort_2000_2000_RANDOM)->Unit(benchmark::kMillisecond)->Iterations(1);
 
 // ============================================================================
 // Optimized CUDA/MPI SNP Sort Benchmarks
@@ -463,9 +466,9 @@ BENCHMARK_REGISTER_F(SortBenchmarkFixture, CudaMpiSnpSort_1000_1000_RANDOM)->Uni
 BENCHMARK_SORT_IMPL(CudaMpiSnpSort, createCudaMpiSnpSorter, 1000, 1000, NEARLY_SORTED)
 BENCHMARK_REGISTER_F(SortBenchmarkFixture, CudaMpiSnpSort_1000_1000_NEARLY_SORTED)->Unit(benchmark::kMillisecond)->Iterations(1);
 
-// // Large inputs
-// BENCHMARK_SORT_IMPL(CudaMpiSnpSort, createCudaMpiSnpSimulator, 2000, 2000, RANDOM)
-// BENCHMARK_REGISTER_F(SortBenchmarkFixture, CudaMpiSnpSort_2000_2000_RANDOM)->Unit(benchmark::kMillisecond);
+// Large inputs
+BENCHMARK_SORT_IMPL(CudaMpiSnpSort, createCudaMpiSnpSorter, 2000, 2000, RANDOM)
+BENCHMARK_REGISTER_F(SortBenchmarkFixture, CudaMpiSnpSort_2000_2000_RANDOM)->Unit(benchmark::kMillisecond)->Iterations(1);
 
 // BENCHMARK_SORT_IMPL(CudaMpiSnpSort, createCudaMpiSnpSimulator, 5000, 5000, RANDOM)
 // BENCHMARK_REGISTER_F(SortBenchmarkFixture, CudaMpiSnpSort_5000_5000_RANDOM)->Unit(benchmark::kMillisecond);
@@ -488,11 +491,24 @@ int main(int argc, char** argv) {
         std::cout << "========================================\n" << std::endl;
     }
     
-    // Initialize benchmark
-    ::benchmark::Initialize(&argc, argv);
+    // CRITICAL FIX: Remove --benchmark_out argument for non-root ranks
+    // to prevent multiple processes writing to the same file
+    std::vector<char*> filtered_argv;
+    for (int i = 0; i < argc; ++i) {
+        std::string arg(argv[i]);
+        // Skip --benchmark_out and --benchmark_format args on non-root ranks
+        if (rank != 0 && (arg.find("--benchmark_out") == 0 || arg.find("--benchmark_format") == 0)) {
+            continue;
+        }
+        filtered_argv.push_back(argv[i]);
+    }
+    int filtered_argc = filtered_argv.size();
+    
+    // Initialize benchmark with filtered arguments
+    ::benchmark::Initialize(&filtered_argc, filtered_argv.data());
     
     // Run benchmarks
-    if (::benchmark::ReportUnrecognizedArguments(argc, argv)) {
+    if (::benchmark::ReportUnrecognizedArguments(filtered_argc, filtered_argv.data())) {
         MPI_Finalize();
         return 1;
     }

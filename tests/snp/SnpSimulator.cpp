@@ -172,14 +172,14 @@ int main(int argc, char** argv) {
     // 2. Initialize Google Test
     ::testing::InitGoogleTest(&argc, argv);
 
-    // // Optional: Add a listener to print test results only from Rank 0
-    // // This prevents cluttered output where every rank prints "[  PASSED  ]"
-    // ::testing::TestEventListeners& listeners = ::testing::UnitTest::GetInstance()->listeners();
-    // int world_rank;
-    // MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
-    // if (world_rank != 0) {
-    //     delete listeners.Release(listeners.default_result_printer());
-    // }
+    // Optional: Add a listener to print test results only from Rank 0
+    // This prevents cluttered output where every rank prints "[  PASSED  ]"
+    ::testing::TestEventListeners& listeners = ::testing::UnitTest::GetInstance()->listeners();
+    int world_rank;
+    MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
+    if (world_rank != 0) {
+        delete listeners.Release(listeners.default_result_printer());
+    }
 
     // 3. Run Tests
     int result = RUN_ALL_TESTS();

@@ -23,10 +23,12 @@ def load_json_benchmark(filepath: str) -> Dict[str, Any]:
 
 def parse_benchmark_name(name: str) -> Dict[str, Any]:
     """Parse benchmark name to extract implementation, size, max_value, and distribution"""
-    # Format: Implementation_Size_MaxValue_Distribution
+    # Format: SortBenchmarkFixture/Implementation_Size_MaxValue_Distribution/iterations:N
     parts = name.split('/')
-    base_name = parts[0] if parts else name
+    if len(parts) < 2:
+        return {}
     
+    base_name = parts[1]  # Get the middle part
     components = base_name.split('_')
     
     # Find the implementation name (everything before the first number)

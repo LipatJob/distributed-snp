@@ -129,3 +129,5 @@ $RECYCLE.BIN/
 # Backup files
 *~
 *.orig
+
+benchmark_results/
