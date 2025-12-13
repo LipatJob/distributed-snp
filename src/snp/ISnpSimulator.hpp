@@ -56,5 +56,6 @@ public:
 // Factory functions for dependency injection / ease of testing
 std::unique_ptr<ISnpSimulator> createNaiveCpuSimulator();
 std::unique_ptr<ISnpSimulator> createCudaSimulator();
+std::unique_ptr<ISnpSimulator> createSparseCudaSimulator();
 std::unique_ptr<ISnpSimulator> createNaiveCudaMpiSimulator();
 std::unique_ptr<ISnpSimulator> createCudaMpiSimulator();

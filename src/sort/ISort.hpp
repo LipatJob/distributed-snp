@@ -64,5 +64,6 @@ public:
 
 std::unique_ptr<ISort> createNaiveCpuSnpSort();
 std::unique_ptr<ISort> createCudaSnpSort();
+std::unique_ptr<ISort> createSparseCudaSnpSort();
 std::unique_ptr<ISort> createNaiveCudaMpiSnpSort();
 std::unique_ptr<ISort> createCudaMpiSnpSort();

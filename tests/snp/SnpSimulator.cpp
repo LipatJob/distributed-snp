@@ -6,6 +6,7 @@
 enum class SimulatorBackend {
     NAIVE_CPU,
     CUDA,
+    SPARSE_CUDA,
     NAIVE_CUDA_MPI,
     CUDA_MPI
 };
@@ -17,6 +18,8 @@ std::unique_ptr<ISnpSimulator> createSimulator(SimulatorBackend backend) {
             return createNaiveCpuSimulator();
         case SimulatorBackend::CUDA:
             return createCudaSimulator();
+        case SimulatorBackend::SPARSE_CUDA:
+            return createSparseCudaSimulator();
         case SimulatorBackend::NAIVE_CUDA_MPI:
             return createNaiveCudaMpiSimulator();
         case SimulatorBackend::CUDA_MPI:
@@ -151,6 +154,7 @@ INSTANTIATE_TEST_SUITE_P(
     ::testing::Values(
         // SimulatorBackend::NAIVE_CPU,
         // SimulatorBackend::CUDA,
+        SimulatorBackend::SPARSE_CUDA,
         SimulatorBackend::NAIVE_CUDA_MPI,
         SimulatorBackend::CUDA_MPI
     ),
@@ -158,6 +162,7 @@ INSTANTIATE_TEST_SUITE_P(
         switch (info.param) {
             case SimulatorBackend::NAIVE_CPU: return "NaiveCPU";
             case SimulatorBackend::CUDA: return "CUDA";
+            case SimulatorBackend::SPARSE_CUDA: return "SparseCUDA";
             case SimulatorBackend::NAIVE_CUDA_MPI: return "NaiveCudaMPI";
             case SimulatorBackend::CUDA_MPI: return "CudaMPI";
             default: return "Unknown";
