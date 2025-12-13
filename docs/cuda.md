@@ -19,17 +19,17 @@ To illustrate the advantage, consider a system with 4 neurons:
 ```
 Memory Layout (Poor for GPU):
 ┌─────────────────────────────────────────────────────────────────┐
-│ Neuron[0]                                                        │
-│  config=5, is_open=1, delay=0, pending=0, production=2         │
+│ Neuron[0]                                                       │
+│  config=5, is_open=1, delay=0, pending=0, production=2          │
 ├─────────────────────────────────────────────────────────────────┤
-│ Neuron[1]                                                        │
-│  config=3, is_open=1, delay=1, pending=1, production=0         │
+│ Neuron[1]                                                       │
+│  config=3, is_open=1, delay=1, pending=1, production=0          │
 ├─────────────────────────────────────────────────────────────────┤
-│ Neuron[2]                                                        │
-│  config=8, is_open=0, delay=2, pending=3, production=0         │
+│ Neuron[2]                                                       │
+│  config=8, is_open=0, delay=2, pending=3, production=0          │
 ├─────────────────────────────────────────────────────────────────┤
-│ Neuron[3]                                                        │
-│  config=2, is_open=1, delay=0, pending=0, production=1         │
+│ Neuron[3]                                                       │
+│  config=2, is_open=1, delay=0, pending=0, production=1          │
 └─────────────────────────────────────────────────────────────────┘
 
 Thread Access Pattern (when reading only 'config'):
@@ -44,15 +44,15 @@ Result: Multiple non-contiguous memory transactions, poor cache usage
 ```
 Memory Layout (Optimal for GPU):
 ┌────────────────────────────────────────────────────┐
-│ configuration[]    │  5  │  3  │  8  │  2  │      │  ← Contiguous
+│ configuration[]    │  5  │  3  │  8  │  2  │       │  ← Contiguous
 ├────────────────────────────────────────────────────┤
-│ is_open[]          │  1  │  1  │  0  │  1  │      │  ← Contiguous
+│ is_open[]          │  1  │  1  │  0  │  1  │       │  ← Contiguous
 ├────────────────────────────────────────────────────┤
-│ delay_timer[]      │  0  │  1  │  2  │  0  │      │  ← Contiguous
+│ delay_timer[]      │  0  │  1  │  2  │  0  │       │  ← Contiguous
 ├────────────────────────────────────────────────────┤
-│ pending_emission[] │  0  │  1  │  3  │  0  │      │  ← Contiguous
+│ pending_emission[] │  0  │  1  │  3  │  0  │       │  ← Contiguous
 ├────────────────────────────────────────────────────┤
-│ spike_production[] │  2  │  0  │  0  │  1  │      │  ← Contiguous
+│ spike_production[] │  2  │  0  │  0  │  1  │       │  ←    Contiguous
 └────────────────────────────────────────────────────┘
         Index:          0     1     2     3
 
