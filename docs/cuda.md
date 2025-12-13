@@ -9,7 +9,73 @@ The most critical design choice in this simulator is the use of **Structure of A
 ### Why SoA?
 In a standard C++ object approach (AoS), a `Neuron` object might hold its spike count, status, and rules together in memory. However, on a GPU, threads (cuda cores) execute in groups called warps.
 * **Coalesced Access:** When thread $i$ reads `configuration[i]` and thread $i+1$ reads `configuration[i+1]`, the GPU can fetch a single continuous chunk of memory.
-* **Cache Efficiency:** SoA ensures that data required for a specific kernel (e.g., just the `delay_timers` for the status update kernel) is packed tightly, maximizing cache hit rates. 
+* **Cache Efficiency:** SoA ensures that data required for a specific kernel (e.g., just the `delay_timers` for the status update kernel) is packed tightly, maximizing cache hit rates.
+
+### Memory Layout Visualization
+
+To illustrate the advantage, consider a system with 4 neurons:
+
+#### Array of Structures (AoS) - Traditional Approach
+```
+Memory Layout (Poor for GPU):
+┌─────────────────────────────────────────────────────────────────┐
+│ Neuron[0]                                                        │
+│  config=5, is_open=1, delay=0, pending=0, production=2         │
+├─────────────────────────────────────────────────────────────────┤
+│ Neuron[1]                                                        │
+│  config=3, is_open=1, delay=1, pending=1, production=0         │
+├─────────────────────────────────────────────────────────────────┤
+│ Neuron[2]                                                        │
+│  config=8, is_open=0, delay=2, pending=3, production=0         │
+├─────────────────────────────────────────────────────────────────┤
+│ Neuron[3]                                                        │
+│  config=2, is_open=1, delay=0, pending=0, production=1         │
+└─────────────────────────────────────────────────────────────────┘
+
+Thread Access Pattern (when reading only 'config'):
+Thread 0 → Neuron[0].config (offset 0)
+Thread 1 → Neuron[1].config (offset 40 bytes) ⚠️ Large stride
+Thread 2 → Neuron[2].config (offset 80 bytes) ⚠️ Large stride
+Thread 3 → Neuron[3].config (offset 120 bytes) ⚠️ Large stride
+Result: Multiple non-contiguous memory transactions, poor cache usage
+```
+
+#### Structure of Arrays (SoA) - GPU-Optimized Approach
+```
+Memory Layout (Optimal for GPU):
+┌────────────────────────────────────────────────────┐
+│ configuration[]    │  5  │  3  │  8  │  2  │      │  ← Contiguous
+├────────────────────────────────────────────────────┤
+│ is_open[]          │  1  │  1  │  0  │  1  │      │  ← Contiguous
+├────────────────────────────────────────────────────┤
+│ delay_timer[]      │  0  │  1  │  2  │  0  │      │  ← Contiguous
+├────────────────────────────────────────────────────┤
+│ pending_emission[] │  0  │  1  │  3  │  0  │      │  ← Contiguous
+├────────────────────────────────────────────────────┤
+│ spike_production[] │  2  │  0  │  0  │  1  │      │  ← Contiguous
+└────────────────────────────────────────────────────┘
+        Index:          0     1     2     3
+
+Thread Access Pattern (when reading only 'config'):
+Thread 0 → configuration[0] (offset 0)
+Thread 1 → configuration[1] (offset 4 bytes)  ✓ Adjacent
+Thread 2 → configuration[2] (offset 8 bytes)  ✓ Adjacent
+Thread 3 → configuration[3] (offset 12 bytes) ✓ Adjacent
+Result: Single coalesced memory transaction, excellent cache usage
+```
+
+#### Performance Impact
+
+| Aspect | Array of Structures | Structure of Arrays |
+|--------|-------------------|-------------------|
+| Memory Transactions | N separate loads | 1 coalesced load |
+| Cache Line Utilization | ~20% (mixed data) | ~100% (homogeneous) |
+| Warp Divergence | Higher (scattered loads) | Lower (uniform access) |
+| Bandwidth Efficiency | Poor | Excellent |
+| Typical Speedup | Baseline | **3-5x faster** |
+
+In `updateNeuronStatusKernel`, threads only need `delay_timer[]` and `is_open[]`. With SoA, these arrays are compact and contiguous, allowing the GPU to load 32 consecutive integers in a single memory transaction (one warp). With AoS, the same operation would require 32 scattered memory accesses across different cache lines.
+
 ### Data Structures
 The simulator defines three main device structures:
 

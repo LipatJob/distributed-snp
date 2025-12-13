@@ -232,18 +232,23 @@ int main(int argc, char** argv) {
     
     // 1. CPU
     RegisterSimulator("CpuSnp", createNaiveCpuSnpSort, Suites::Small);
+    RegisterSimulator("CpuSnp", createNaiveCpuSnpSort, Suites::Medium);
 
     // 2. CUDA
     RegisterSimulator("CudaSnp", createCudaSnpSort, Suites::Small);
+    RegisterSimulator("CudaSnp", createCudaSnpSort, Suites::Medium);
 
     // 3. Sparse CUDA
     RegisterSimulator("SparseCudaSnp", createSparseCudaSnpSort, Suites::Small);
+    RegisterSimulator("SparseCudaSnp", createSparseCudaSnpSort, Suites::Medium);
 
     // 4. Naive CUDA/MPI
     RegisterSimulator("NaiveCudaMpiSnp", createNaiveCudaMpiSnpSort, Suites::Small);
+    RegisterSimulator("NaiveCudaMpiSnp", createNaiveCudaMpiSnpSort, Suites::Medium);
 
     // 5. CUDA/MPI
     RegisterSimulator("CudaMpiSnp", createCudaMpiSnpSort, Suites::Small);
+    RegisterSimulator("CudaMpiSnp", createCudaMpiSnpSort, Suites::Medium);
 
 
     // --- EXECUTION PHASE ---
