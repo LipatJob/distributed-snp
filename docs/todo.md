@@ -13,3 +13,6 @@ Jarred
 * 1 Pager
 * Add tests
 * Optimized neuron assignment
+
+Deadline of Optimizations: December 14
+Start of Paper/Presentation: December 15
