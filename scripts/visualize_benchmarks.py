@@ -16,6 +16,57 @@ import matplotlib
 matplotlib.use('Agg')  # Non-interactive backend for server environments
 import numpy as np
 
+# ============================================================================
+# CONFIGURATION - Add new implementations here
+# ============================================================================
+
+IMPLEMENTATION_CONFIG = {
+    'CpuSnp': {
+        'label': 'CPU',
+        'color': '#3498db',
+        'category': 'baseline',
+        'order': 1
+    },
+    'CudaSnp': {
+        'label': 'CUDA',
+        'color': '#9b59b6',
+        'category': 'gpu',
+        'order': 2
+    },
+    'SparseCudaSnp': {
+        'label': 'Sparse CUDA',
+        'color': '#8e44ad',
+        'category': 'gpu',
+        'order': 3
+    },
+    'NaiveCudaMpiSnp': {
+        'label': 'Naive CUDA+MPI',
+        'color': '#e74c3c',
+        'category': 'distributed',
+        'order': 4
+    },
+    'CudaMpiSnp': {
+        'label': 'Optimized CUDA+MPI',
+        'color': '#2ecc71',
+        'category': 'distributed',
+        'order': 5
+    }
+}
+
+# Default baseline for speedup calculations
+BASELINE_IMPL = 'CpuSnp'
+
+# Default distribution for scalability plots
+DEFAULT_DISTRIBUTION = 'Random'
+
+# ============================================================================
+
+# ============================================================================
+
+def get_impl_info(impl_name: str, key: str, default=None):
+    """Get configuration info for an implementation"""
+    return IMPLEMENTATION_CONFIG.get(impl_name, {}).get(key, default)
+
 def load_json_benchmark(filepath: str) -> Dict[str, Any]:
     """Load benchmark results from JSON file"""
     with open(filepath, 'r') as f:
@@ -23,42 +74,25 @@ def load_json_benchmark(filepath: str) -> Dict[str, Any]:
 
 def parse_benchmark_name(name: str) -> Dict[str, Any]:
     """Parse benchmark name to extract implementation, size, max_value, and distribution"""
-    # Format: SortBenchmarkFixture/Implementation_Size_MaxValue_Distribution/iterations:N
+    # Format: Implementation/Distribution/Size/MaxValue/iterations:N
     parts = name.split('/')
-    if len(parts) < 2:
+    if len(parts) < 4:
         return {}
     
-    base_name = parts[1]  # Get the middle part
-    components = base_name.split('_')
-    
-    # Find the implementation name (everything before the first number)
-    impl_parts = []
-    remaining_parts = []
-    found_number = False
-    
-    for part in components:
-        if not found_number and not part.isdigit():
-            impl_parts.append(part)
-        else:
-            found_number = True
-            remaining_parts.append(part)
-    
-    if len(remaining_parts) >= 3:
-        impl = '_'.join(impl_parts)
-        size = remaining_parts[0]
-        max_val = remaining_parts[1]
-        dist = '_'.join(remaining_parts[2:])
+    try:
+        impl = parts[0]
+        distribution = parts[1]
+        size = int(parts[2])
+        max_value = int(parts[3])
         
-        try:
-            return {
-                'implementation': impl,
-                'size': int(size),
-                'max_value': int(max_val),
-                'distribution': dist
-            }
-        except ValueError:
-            return {}
-    return {}
+        return {
+            'implementation': impl,
+            'size': size,
+            'max_value': max_value,
+            'distribution': distribution
+        }
+    except (ValueError, IndexError):
+        return {}
 
 def collect_benchmark_data(results: List[Dict[str, Any]]) -> Dict[Tuple, List[Dict]]:
     """Collect and organize benchmark data"""
@@ -78,9 +112,9 @@ def collect_benchmark_data(results: List[Dict[str, Any]]) -> Dict[Tuple, List[Di
                     'impl': parsed['implementation'],
                     'time': bench['real_time'],
                     'cpu_time': bench['cpu_time'],
-                    'comm_time': bench.get('CommTime_ms', 0),
+                    'comm_time': bench.get('Comm_ms', 0),
                     'compute_time': bench.get('ComputeTime_ms', 0),
-                    'num_processes': bench.get('NumProcesses', 1)
+                    'num_processes': bench.get('Procs', 1)
                 }
                 grouped[key].append(data)
     
@@ -90,11 +124,21 @@ def plot_execution_time_comparison(grouped_data: Dict, output_dir: Path):
     """Create bar chart comparing execution times across implementations"""
     fig, ax = plt.subplots(figsize=(14, 8))
     
-    # Prepare data
+    # Get all implementations present in the data, sorted by order
+    all_impls = set()
+    for benchmarks in grouped_data.values():
+        for bench in benchmarks:
+            all_impls.add(bench['impl'])
+    
+    # Sort implementations by configured order
+    sorted_impls = sorted(
+        [impl for impl in all_impls if impl in IMPLEMENTATION_CONFIG],
+        key=lambda x: get_impl_info(x, 'order', 999)
+    )
+    
+    # Prepare data structures
     configs = []
-    cpu_times = []
-    naive_cuda_mpi_times = []
-    cuda_mpi_times = []
+    impl_times = {impl: [] for impl in sorted_impls}
     
     for key in sorted(grouped_data.keys()):
         size, max_val, dist = key
@@ -103,30 +147,29 @@ def plot_execution_time_comparison(grouped_data: Dict, output_dir: Path):
         config_label = f"{size}\n{dist[:8]}"
         configs.append(config_label)
         
-        cpu_time = None
-        naive_time = None
-        opt_time = None
-        
+        # Collect times for each implementation
+        times_for_config = {impl: None for impl in sorted_impls}
         for bench in benchmarks:
             impl = bench['impl']
-            if 'NaiveCpuSnpSort' in impl or 'CpuSnpSort' in impl:
-                cpu_time = bench['time']
-            elif 'NaiveCudaMpiSnpSort' in impl:
-                naive_time = bench['time']
-            elif 'CudaMpiSnpSort' in impl:
-                opt_time = bench['time']
+            if impl in times_for_config:
+                times_for_config[impl] = bench['time']
         
-        cpu_times.append(cpu_time if cpu_time else 0)
-        naive_cuda_mpi_times.append(naive_time if naive_time else 0)
-        cuda_mpi_times.append(opt_time if opt_time else 0)
+        # Append to lists (0 if not found)
+        for impl in sorted_impls:
+            impl_times[impl].append(times_for_config[impl] if times_for_config[impl] else 0)
     
     # Create grouped bars
     x = np.arange(len(configs))
-    width = 0.25
+    num_impls = len(sorted_impls)
+    width = 0.8 / num_impls if num_impls > 0 else 0.25
     
-    bars1 = ax.bar(x - width, cpu_times, width, label='CPU', color='#3498db', alpha=0.8)
-    bars2 = ax.bar(x, naive_cuda_mpi_times, width, label='Naive CUDA+MPI', color='#e74c3c', alpha=0.8)
-    bars3 = ax.bar(x + width, cuda_mpi_times, width, label='Optimized CUDA+MPI', color='#2ecc71', alpha=0.8)
+    bars_list = []
+    for i, impl in enumerate(sorted_impls):
+        offset = (i - num_impls/2 + 0.5) * width
+        color = get_impl_info(impl, 'color', '#95a5a6')
+        label = get_impl_info(impl, 'label', impl)
+        bars = ax.bar(x + offset, impl_times[impl], width, label=label, color=color, alpha=0.8)
+        bars_list.append(bars)
     
     # Customize plot
     ax.set_xlabel('Configuration (Size / Distribution)', fontsize=12, fontweight='bold')
@@ -146,9 +189,8 @@ def plot_execution_time_comparison(grouped_data: Dict, output_dir: Path):
                        f'{height:.1f}',
                        ha='center', va='bottom', fontsize=8)
     
-    add_labels(bars1)
-    add_labels(bars2)
-    add_labels(bars3)
+    for bars in bars_list:
+        add_labels(bars)
     
     plt.tight_layout()
     output_file = output_dir / 'execution_time_comparison.png'
@@ -160,9 +202,20 @@ def plot_speedup_analysis(grouped_data: Dict, output_dir: Path):
     """Create speedup comparison chart"""
     fig, ax = plt.subplots(figsize=(14, 8))
     
+    # Get all non-baseline implementations
+    all_impls = set()
+    for benchmarks in grouped_data.values():
+        for bench in benchmarks:
+            if bench['impl'] != BASELINE_IMPL:
+                all_impls.add(bench['impl'])
+    
+    sorted_impls = sorted(
+        [impl for impl in all_impls if impl in IMPLEMENTATION_CONFIG],
+        key=lambda x: get_impl_info(x, 'order', 999)
+    )
+    
     configs = []
-    naive_speedups = []
-    opt_speedups = []
+    impl_speedups = {impl: [] for impl in sorted_impls}
     
     for key in sorted(grouped_data.keys()):
         size, max_val, dist = key
@@ -171,38 +224,38 @@ def plot_speedup_analysis(grouped_data: Dict, output_dir: Path):
         config_label = f"{size}\n{dist[:8]}"
         configs.append(config_label)
         
-        cpu_time = None
-        naive_time = None
-        opt_time = None
-        
+        # Get baseline time
+        baseline_time = None
+        times_for_config = {}
         for bench in benchmarks:
-            impl = bench['impl']
-            if 'NaiveCpuSnpSort' in impl or 'CpuSnpSort' in impl:
-                cpu_time = bench['time']
-            elif 'NaiveCudaMpiSnpSort' in impl:
-                naive_time = bench['time']
-            elif 'CudaMpiSnpSort' in impl:
-                opt_time = bench['time']
+            if bench['impl'] == BASELINE_IMPL:
+                baseline_time = bench['time']
+            times_for_config[bench['impl']] = bench['time']
         
-        # Calculate speedups (higher is better)
-        if cpu_time and naive_time and cpu_time > 0:
-            naive_speedups.append(cpu_time / naive_time)
-        else:
-            naive_speedups.append(0)
-        
-        if cpu_time and opt_time and cpu_time > 0:
-            opt_speedups.append(cpu_time / opt_time)
-        else:
-            opt_speedups.append(0)
+        # Calculate speedups
+        for impl in sorted_impls:
+            if baseline_time and impl in times_for_config and baseline_time > 0 and times_for_config[impl] > 0:
+                speedup = baseline_time / times_for_config[impl]
+                impl_speedups[impl].append(speedup)
+            else:
+                impl_speedups[impl].append(0)
     
     x = np.arange(len(configs))
-    width = 0.35
+    num_impls = len(sorted_impls)
+    width = 0.8 / num_impls if num_impls > 0 else 0.35
     
-    bars1 = ax.bar(x - width/2, naive_speedups, width, label='Naive CUDA+MPI', color='#e74c3c', alpha=0.8)
-    bars2 = ax.bar(x + width/2, opt_speedups, width, label='Optimized CUDA+MPI', color='#2ecc71', alpha=0.8)
+    bars_list = []
+    for i, impl in enumerate(sorted_impls):
+        offset = (i - num_impls/2 + 0.5) * width
+        color = get_impl_info(impl, 'color', '#95a5a6')
+        label = get_impl_info(impl, 'label', impl)
+        bars = ax.bar(x + offset, impl_speedups[impl], width, label=label, color=color, alpha=0.8)
+        bars_list.append(bars)
     
     # Add baseline at 1.0x
-    ax.axhline(y=1.0, color='black', linestyle='--', linewidth=1, alpha=0.5, label='Baseline (CPU)')
+    baseline_label = get_impl_info(BASELINE_IMPL, 'label', BASELINE_IMPL)
+    ax.axhline(y=1.0, color='black', linestyle='--', linewidth=1, alpha=0.5, 
+               label=f'Baseline ({baseline_label})')
     
     ax.set_xlabel('Configuration (Size / Distribution)', fontsize=12, fontweight='bold')
     ax.set_ylabel('Speedup vs CPU (higher is better)', fontsize=12, fontweight='bold')
@@ -221,8 +274,8 @@ def plot_speedup_analysis(grouped_data: Dict, output_dir: Path):
                        f'{height:.2f}x',
                        ha='center', va='bottom', fontsize=8)
     
-    add_labels(bars1)
-    add_labels(bars2)
+    for bars in bars_list:
+        add_labels(bars)
     
     plt.tight_layout()
     output_file = output_dir / 'speedup_analysis.png'
@@ -257,10 +310,10 @@ def plot_comm_vs_compute(grouped_data: Dict, output_dir: Path):
             comm = bench.get('comm_time', 0)
             comp = bench.get('compute_time', 0)
             
-            if 'NaiveCudaMpiSnpSort' in impl:
+            if impl == 'NaiveCudaMpiSnp':
                 naive_comm_time = comm
                 naive_comp_time = comp
-            elif 'CudaMpiSnpSort' in impl:
+            elif impl == 'CudaMpiSnp':
                 opt_comm_time = comm
                 opt_comp_time = comp
         
@@ -309,29 +362,26 @@ def plot_scalability(grouped_data: Dict, output_dir: Path):
             time = bench['time']
             by_distribution[dist][impl].append((size, time))
     
-    # Plot for the most common distribution (e.g., RANDOM)
-    dist_to_plot = 'RANDOM'
+    # Plot for the configured default distribution
+    dist_to_plot = DEFAULT_DISTRIBUTION
     if dist_to_plot in by_distribution:
         impl_data = by_distribution[dist_to_plot]
         
-        for impl, data_points in impl_data.items():
+        # Sort implementations by order
+        sorted_impls = sorted(
+            [impl for impl in impl_data.keys() if impl in IMPLEMENTATION_CONFIG],
+            key=lambda x: get_impl_info(x, 'order', 999)
+        )
+        
+        for impl in sorted_impls:
+            data_points = impl_data[impl]
             # Sort by size
             data_points.sort(key=lambda x: x[0])
             sizes = [x[0] for x in data_points]
             times = [x[1] for x in data_points]
             
-            # Choose color and label
-            if 'NaiveCudaMpiSnpSort' in impl:
-                color = '#e74c3c'
-                label = 'Naive CUDA+MPI'
-            elif 'CudaMpiSnpSort' in impl:
-                color = '#2ecc71'
-                label = 'Optimized CUDA+MPI'
-            elif 'Cpu' in impl:
-                color = '#3498db'
-                label = 'CPU'
-            else:
-                continue
+            color = get_impl_info(impl, 'color', '#95a5a6')
+            label = get_impl_info(impl, 'label', impl)
             
             ax.plot(sizes, times, marker='o', linewidth=2, markersize=8, 
                    color=color, label=label, alpha=0.8)
@@ -354,19 +404,41 @@ def generate_summary_report(grouped_data: Dict, output_dir: Path):
     """Generate a text summary report"""
     output_file = output_dir / 'benchmark_summary.txt'
     
+    # Get all implementations present in the data
+    all_impls = set()
+    for benchmarks in grouped_data.values():
+        for bench in benchmarks:
+            all_impls.add(bench['impl'])
+    
+    sorted_impls = sorted(
+        [impl for impl in all_impls if impl in IMPLEMENTATION_CONFIG],
+        key=lambda x: get_impl_info(x, 'order', 999)
+    )
+    
+    # Get non-baseline implementations for speedup stats
+    non_baseline_impls = [impl for impl in sorted_impls if impl != BASELINE_IMPL]
+    
     with open(output_file, 'w') as f:
-        f.write("=" * 100 + "\n")
+        f.write("=" * 120 + "\n")
         f.write("SNP SORT BENCHMARK SUMMARY REPORT\n")
-        f.write("=" * 100 + "\n\n")
+        f.write("=" * 120 + "\n\n")
         
-        # Detailed results table
+        # Build header
+        header = f"{'Config':<30}"
+        for impl in sorted_impls:
+            label = get_impl_info(impl, 'label', impl)
+            header += f" {label:<15}"
+        for impl in non_baseline_impls:
+            label = get_impl_info(impl, 'label', impl)
+            header += f" {label} Spd:<15"[:15]
+        
         f.write("DETAILED RESULTS\n")
-        f.write("-" * 100 + "\n")
-        f.write(f"{'Config':<30} {'CPU':<12} {'Naive MPI':<12} {'Opt MPI':<12} {'Naive Spdup':<12} {'Opt Spdup':<12}\n")
-        f.write("-" * 100 + "\n")
+        f.write("-" * 120 + "\n")
+        f.write(header + "\n")
+        f.write("-" * 120 + "\n")
         
-        all_naive_speedups = []
-        all_opt_speedups = []
+        # Collect all speedups for statistics
+        impl_speedups = {impl: [] for impl in non_baseline_impls}
         
         for key in sorted(grouped_data.keys()):
             size, max_val, dist = key
@@ -374,60 +446,63 @@ def generate_summary_report(grouped_data: Dict, output_dir: Path):
             
             config_name = f"{size}/{dist}"
             
-            cpu_time = naive_time = opt_time = None
-            
+            # Collect times
+            times = {}
             for bench in benchmarks:
                 impl = bench['impl']
-                if 'NaiveCpuSnpSort' in impl or 'CpuSnpSort' in impl:
-                    cpu_time = bench['time']
-                elif 'NaiveCudaMpiSnpSort' in impl:
-                    naive_time = bench['time']
-                elif 'CudaMpiSnpSort' in impl:
-                    opt_time = bench['time']
+                if impl in sorted_impls:
+                    times[impl] = bench['time']
             
-            cpu_str = f"{cpu_time:.2f} ms" if cpu_time else "N/A"
-            naive_str = f"{naive_time:.2f} ms" if naive_time else "N/A"
-            opt_str = f"{opt_time:.2f} ms" if opt_time else "N/A"
+            # Build row
+            row = f"{config_name:<30}"
             
-            naive_speedup = cpu_time / naive_time if cpu_time and naive_time else None
-            opt_speedup = cpu_time / opt_time if cpu_time and opt_time else None
+            # Add times
+            for impl in sorted_impls:
+                time = times.get(impl)
+                time_str = f"{time:.2f} ms" if time else "N/A"
+                row += f" {time_str:<15}"
             
-            if naive_speedup:
-                all_naive_speedups.append(naive_speedup)
-            if opt_speedup:
-                all_opt_speedups.append(opt_speedup)
+            # Add speedups
+            baseline_time = times.get(BASELINE_IMPL)
+            for impl in non_baseline_impls:
+                impl_time = times.get(impl)
+                if baseline_time and impl_time and baseline_time > 0 and impl_time > 0:
+                    speedup = baseline_time / impl_time
+                    impl_speedups[impl].append(speedup)
+                    row += f" {speedup:.2f}x{'':<10}"
+                else:
+                    row += f" {'N/A':<15}"
             
-            naive_sp_str = f"{naive_speedup:.2f}x" if naive_speedup else "N/A"
-            opt_sp_str = f"{opt_speedup:.2f}x" if opt_speedup else "N/A"
-            
-            f.write(f"{config_name:<30} {cpu_str:<12} {naive_str:<12} {opt_str:<12} {naive_sp_str:<12} {opt_sp_str:<12}\n")
+            f.write(row + "\n")
         
-        f.write("\n" + "=" * 100 + "\n")
+        f.write("\n" + "=" * 120 + "\n")
         f.write("SUMMARY STATISTICS\n")
-        f.write("=" * 100 + "\n\n")
+        f.write("=" * 120 + "\n\n")
         
-        if all_naive_speedups:
-            f.write(f"Naive CUDA+MPI Speedup:\n")
-            f.write(f"  Average: {np.mean(all_naive_speedups):.2f}x\n")
-            f.write(f"  Median:  {np.median(all_naive_speedups):.2f}x\n")
-            f.write(f"  Min:     {np.min(all_naive_speedups):.2f}x\n")
-            f.write(f"  Max:     {np.max(all_naive_speedups):.2f}x\n")
-            f.write(f"  StdDev:  {np.std(all_naive_speedups):.2f}\n\n")
+        baseline_label = get_impl_info(BASELINE_IMPL, 'label', BASELINE_IMPL)
+        f.write(f"Speedup vs {baseline_label}:\n\n")
         
-        if all_opt_speedups:
-            f.write(f"Optimized CUDA+MPI Speedup:\n")
-            f.write(f"  Average: {np.mean(all_opt_speedups):.2f}x\n")
-            f.write(f"  Median:  {np.median(all_opt_speedups):.2f}x\n")
-            f.write(f"  Min:     {np.min(all_opt_speedups):.2f}x\n")
-            f.write(f"  Max:     {np.max(all_opt_speedups):.2f}x\n")
-            f.write(f"  StdDev:  {np.std(all_opt_speedups):.2f}\n\n")
+        for impl in non_baseline_impls:
+            speedups = impl_speedups[impl]
+            if speedups:
+                label = get_impl_info(impl, 'label', impl)
+                f.write(f"{label}:\n")
+                f.write(f"  Average: {np.mean(speedups):.2f}x\n")
+                f.write(f"  Median:  {np.median(speedups):.2f}x\n")
+                f.write(f"  Min:     {np.min(speedups):.2f}x\n")
+                f.write(f"  Max:     {np.max(speedups):.2f}x\n")
+                f.write(f"  StdDev:  {np.std(speedups):.2f}\n\n")
         
-        if all_naive_speedups and all_opt_speedups:
-            improvement = np.mean(all_opt_speedups) / np.mean(all_naive_speedups)
-            f.write(f"Optimization Improvement: {improvement:.2f}x\n")
-            f.write(f"  (Optimized is {improvement:.2f}x faster than Naive on average)\n\n")
+        # Compare distributed implementations if both exist
+        if 'NaiveCudaMpiSnp' in impl_speedups and 'CudaMpiSnp' in impl_speedups:
+            naive_speedups = impl_speedups['NaiveCudaMpiSnp']
+            opt_speedups = impl_speedups['CudaMpiSnp']
+            if naive_speedups and opt_speedups:
+                improvement = np.mean(opt_speedups) / np.mean(naive_speedups)
+                f.write(f"Optimization Improvement:\n")
+                f.write(f"  Optimized CUDA+MPI is {improvement:.2f}x faster than Naive CUDA+MPI on average\n\n")
         
-        f.write("=" * 100 + "\n")
+        f.write("=" * 120 + "\n")
     
     print(f"Saved: {output_file}")
 

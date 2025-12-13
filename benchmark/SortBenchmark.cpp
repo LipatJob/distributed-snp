@@ -260,12 +260,18 @@ int main(int argc, char** argv) {
         std::cout << "  ./bench --benchmark_filter=\"Small\"    (Run only small inputs)" << std::endl;
     }
 
-    ::benchmark::Initialize(&argc, argv);
-
-    // Suppress output on non-root ranks
+    // Only rank 0 initializes benchmark arguments to handle output file writing
     if (rank == 0) {
+        ::benchmark::Initialize(&argc, argv);
         ::benchmark::RunSpecifiedBenchmarks();
     } else {
+        // Non-root ranks: Initialize with minimal args (no output file arguments)
+        // This prevents non-root ranks from attempting to write to output files
+        int argc_minimal = 1;
+        char* argv_minimal[] = {argv[0]};
+        ::benchmark::Initialize(&argc_minimal, argv_minimal);
+        
+        // Use a null reporter to suppress all output
         class NullReporter : public ::benchmark::BenchmarkReporter {
             bool ReportContext(const Context&) override { return true; }
             void ReportRuns(const std::vector<Run>&) override {}
