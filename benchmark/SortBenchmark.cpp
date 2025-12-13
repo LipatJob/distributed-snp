@@ -74,6 +74,26 @@ namespace BenchUtils {
             case Distribution::UNIFORM:
                 std::fill(data.begin(), data.end(), valDist(rng));
                 break;
+            case Distribution::NEARLY_SORTED:
+                for(auto& x : data) x = valDist(rng);
+                std::sort(data.begin(), data.end());
+                for (size_t i = 0; i < size / 10; ++i) {
+                    size_t idx1 = rng() % size;
+                    size_t idx2 = rng() % size;
+                    std::swap(data[idx1], data[idx2]);
+                }
+                break;
+            case Distribution::FEW_UNIQUE: {
+                int uniqueCount = std::max(2, maxValue / 10);
+                std::vector<int> uniqueValues(uniqueCount);
+                for (auto& x : uniqueValues) x = valDist(rng) % maxValue;
+                for (auto& x : data) x = uniqueValues[rng() % uniqueCount];
+                break;
+            }
+            case Distribution::RANDOM: {
+                for(auto& x : data) x = valDist(rng);
+                break;
+            }
             default: // Random and others
                 for(auto& x : data) x = valDist(rng);
                 break;
@@ -196,17 +216,21 @@ namespace Suites {
     using namespace BenchUtils;
 
     const std::vector<TestConfig> Small = {
-        {"Small_Rand", 100, 100, Distribution::RANDOM, 10},
-        {"Small_Sort", 100, 100, Distribution::SORTED, 10},
+        {"Small_Sort", 100, 100, Distribution::SORTED, 25},
+        {"Small_RevSort", 100, 100, Distribution::REVERSE_SORTED, 25},
+        {"Small_Rand", 100, 100, Distribution::RANDOM, 25},
     };
 
     const std::vector<TestConfig> Medium = {
-        {"Med_Rand",  1000, 1000, Distribution::RANDOM, 1},
-        {"Med_Near",  1000, 1000, Distribution::NEARLY_SORTED, 1},
+        {"Medium_Sort", 1000, 1000, Distribution::SORTED, 5},
+        {"Medium_RevSort", 1000, 1000, Distribution::REVERSE_SORTED, 5},
+        {"Medium_Rand", 1000, 1000, Distribution::RANDOM, 5},
     };
 
     const std::vector<TestConfig> Large = {
-        {"Lrg_Rand",  5000, 5000, Distribution::RANDOM, 1},
+        {"Large_Sort", 5000, 5000, Distribution::SORTED, 5},
+        {"Large_RevSort", 5000, 5000, Distribution::REVERSE_SORTED, 5},
+        {"Large_Rand", 5000, 5000, Distribution::RANDOM, 5},
     };
     
     // Combine vectors helper

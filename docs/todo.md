@@ -1,18 +1,18 @@
 General
-* Profile GPU kernels
-* Thoroughly compare sparse and optimized CUDA -> sparseness
-* Presentation
-* Paper
+[ ] Profile GPU kernels
+[ ] Thoroughly compare sparse and optimized CUDA -> sparseness
+[ ] Presentation
+[ ] Paper
 
 Job
-* Complete benchmark scenarios
-* Refactor: CUDA MPI -> Optimized CUDA MPI, CUDA to Optimized CUDA 
-* Try to optimize Optimized CUDA MPI
+[x] Complete benchmark scenarios
+[ ] Refactor: CUDA MPI -> Optimized CUDA MPI, CUDA to Optimized CUDA 
+[ ] Try to optimize Optimized CUDA MPI
 
 Jarred
-* 1 Pager
-* Add tests
-* Optimized neuron assignment
+[ ] 1 Pager
+[ ] Add tests
+[ ] Optimized neuron assignment
 
 Deadline of Optimizations: December 14
 Start of Paper/Presentation: December 15
