@@ -185,6 +185,11 @@ std::unique_ptr<ISort> createCudaSnpSort() {
     return std::make_unique<SnpSort>(createCudaSimulator());
 }
 
+// Factory function to create SnpSort with Naive CUDA/MPI simulator
+std::unique_ptr<ISort> createNaiveCudaMpiSnpSort() {
+    return std::make_unique<SnpSort>(createNaiveCudaMpiSimulator());
+}
+
 // Factory function to create SnpSort with CUDA/MPI simulator
 std::unique_ptr<ISort> createCudaMpiSnpSort() {
     return std::make_unique<SnpSort>(createCudaMpiSimulator());

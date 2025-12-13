@@ -20,6 +20,7 @@ std::unique_ptr<ISnpSimulator> createCudaMpiSimulator();
 // Forward declare sorter factory functions (from ISort.hpp)
 std::unique_ptr<ISort> createNaiveCpuSnpSort();
 std::unique_ptr<ISort> createCudaSnpSort();
+std::unique_ptr<ISort> createNaiveCudaMpiSnpSort();
 std::unique_ptr<ISort> createCudaMpiSnpSort();
 
 // Wrapper functions to create sorters for benchmark macro
@@ -29,6 +30,10 @@ inline std::unique_ptr<ISort> createNaiveCpuSnpSorter() {
 
 inline std::unique_ptr<ISort> createCudaSnpSorter() {
     return createCudaSnpSort();
+}
+
+inline std::unique_ptr<ISort> createNaiveCudaMpiSnpSorter() {
+    return createNaiveCudaMpiSnpSort();
 }
 
 inline std::unique_ptr<ISort> createCudaMpiSnpSorter() {
@@ -372,6 +377,48 @@ double extractComputeTime(const std::string& report) {
 
 // BENCHMARK_SORT_IMPL(CudaSnpSort, createCudaSnpSimulator, 5000, 5000, RANDOM)
 // BENCHMARK_REGISTER_F(SortBenchmarkFixture, CudaSnpSort_5000_5000_RANDOM)->Unit(benchmark::kMillisecond);
+
+
+// ============================================================================
+// Naive CUDA/MPI SNP Sort Benchmarks
+// ============================================================================
+
+// Small inputs
+// NOTE: ->Iterations(1) is CRITICAL for MPI benchmarks to prevent deadlock
+// All ranks must run the same number of iterations to stay synchronized
+BENCHMARK_SORT_IMPL(NaiveCudaMpiSnpSort, createNaiveCudaMpiSnpSorter, 10, 10, RANDOM)
+BENCHMARK_REGISTER_F(SortBenchmarkFixture, NaiveCudaMpiSnpSort_10_10_RANDOM)->Unit(benchmark::kMillisecond)->Iterations(10);
+
+BENCHMARK_SORT_IMPL(NaiveCudaMpiSnpSort, createNaiveCudaMpiSnpSorter, 10, 10, SORTED)
+BENCHMARK_REGISTER_F(SortBenchmarkFixture, NaiveCudaMpiSnpSort_10_10_SORTED)->Unit(benchmark::kMillisecond)->Iterations(10);
+
+BENCHMARK_SORT_IMPL(NaiveCudaMpiSnpSort, createNaiveCudaMpiSnpSorter, 10, 10, REVERSE_SORTED)
+BENCHMARK_REGISTER_F(SortBenchmarkFixture, NaiveCudaMpiSnpSort_10_10_REVERSE_SORTED)->Unit(benchmark::kMillisecond)->Iterations(10);
+
+BENCHMARK_SORT_IMPL(NaiveCudaMpiSnpSort, createNaiveCudaMpiSnpSorter, 50, 10, RANDOM)
+BENCHMARK_REGISTER_F(SortBenchmarkFixture, NaiveCudaMpiSnpSort_50_10_RANDOM)->Unit(benchmark::kMillisecond)->Iterations(10);
+
+BENCHMARK_SORT_IMPL(NaiveCudaMpiSnpSort, createNaiveCudaMpiSnpSorter, 100, 100, RANDOM)
+BENCHMARK_REGISTER_F(SortBenchmarkFixture, NaiveCudaMpiSnpSort_100_100_RANDOM)->Unit(benchmark::kMillisecond)->Iterations(1);
+
+BENCHMARK_SORT_IMPL(NaiveCudaMpiSnpSort, createNaiveCudaMpiSnpSorter, 100, 100, NEARLY_SORTED)
+BENCHMARK_REGISTER_F(SortBenchmarkFixture, NaiveCudaMpiSnpSort_100_100_NEARLY_SORTED)->Unit(benchmark::kMillisecond)->Iterations(1);
+
+BENCHMARK_SORT_IMPL(NaiveCudaMpiSnpSort, createNaiveCudaMpiSnpSorter, 100, 100, FEW_UNIQUE)
+BENCHMARK_REGISTER_F(SortBenchmarkFixture, NaiveCudaMpiSnpSort_100_100_FEW_UNIQUE)->Unit(benchmark::kMillisecond)->Iterations(1);
+
+BENCHMARK_SORT_IMPL(NaiveCudaMpiSnpSort, createNaiveCudaMpiSnpSorter, 100, 100, UNIFORM)
+BENCHMARK_REGISTER_F(SortBenchmarkFixture, NaiveCudaMpiSnpSort_100_100_UNIFORM)->Unit(benchmark::kMillisecond)->Iterations(1);
+
+// Medium inputs
+BENCHMARK_SORT_IMPL(NaiveCudaMpiSnpSort, createNaiveCudaMpiSnpSorter, 500, 100, RANDOM)
+BENCHMARK_REGISTER_F(SortBenchmarkFixture, NaiveCudaMpiSnpSort_500_100_RANDOM)->Unit(benchmark::kMillisecond)->Iterations(1);
+
+BENCHMARK_SORT_IMPL(NaiveCudaMpiSnpSort, createNaiveCudaMpiSnpSorter, 1000, 1000, RANDOM)
+BENCHMARK_REGISTER_F(SortBenchmarkFixture, NaiveCudaMpiSnpSort_1000_1000_RANDOM)->Unit(benchmark::kMillisecond)->Iterations(1);
+
+BENCHMARK_SORT_IMPL(NaiveCudaMpiSnpSort, createNaiveCudaMpiSnpSorter, 1000, 1000, NEARLY_SORTED)
+BENCHMARK_REGISTER_F(SortBenchmarkFixture, NaiveCudaMpiSnpSort_1000_1000_NEARLY_SORTED)->Unit(benchmark::kMillisecond)->Iterations(1);
 
 
 // ============================================================================

@@ -30,7 +30,7 @@ NC := \033[0m
 .PHONY: all help configure build debug release clean rebuild install check-deps lint \
         generate-hostfile distribute check-nodes \
         deploy-tests test-distributed run-distributed \
-        benchmark-sort benchmark-distributed compare-benchmarks
+        benchmark-sort benchmark-distributed compare-benchmarks visualize-benchmarks benchmark-and-visualize
 
 # Default target
 all: build
@@ -57,9 +57,11 @@ help:
 	@echo "  run-distributed   - Run demo on distributed nodes"
 	@echo ""
 	@echo "$(GREEN)Benchmark Targets:$(NC)"
-	@echo "  benchmark-sort         - Run sort benchmarks locally"
-	@echo "  benchmark-distributed  - Run sort benchmarks across distributed nodes"
-	@echo "  compare-benchmarks     - Compare benchmark results"
+	@echo "  benchmark-sort           - Run sort benchmarks locally"
+	@echo "  benchmark-distributed    - Run sort benchmarks across distributed nodes"
+	@echo "  compare-benchmarks       - Compare benchmark results (text)"
+	@echo "  visualize-benchmarks     - Generate visualization plots from results"
+	@echo "  benchmark-and-visualize  - Run benchmarks and auto-generate visualizations"
 	@echo ""
 	@echo "$(GREEN)Variables:$(NC)"
 	@echo "  BUILD_TYPE        - Release or Debug (default: Release)"
@@ -174,9 +176,20 @@ benchmark-sort: build
 benchmark-distributed: build
 	@echo "$(GREEN)Running distributed sort benchmarks...$(NC)"
 	@chmod +x scripts/run_distributed_benchmark.sh
-	@./scripts/run_distributed_benchmark.sh
+	@./scripts/run_distributed_benchmark.sh $(BENCHMARK_ARGS)
 
 compare-benchmarks:
 	@echo "$(GREEN)Comparing benchmark results...$(NC)"
 	@chmod +x scripts/compare_benchmarks.py
 	@./scripts/compare_benchmarks.py benchmark_results/*.json || echo "$(YELLOW)No benchmark results found. Run benchmarks first.$(NC)"
+
+visualize-benchmarks:
+	@echo "$(GREEN)Visualizing benchmark results...$(NC)"
+	@chmod +x scripts/visualize_benchmarks.py
+	@mkdir -p benchmark_results
+	@./scripts/visualize_benchmarks.py benchmark_results/*.json || echo "$(YELLOW)No benchmark results found. Run benchmarks first.$(NC)"
+
+benchmark-and-visualize: build
+	@echo "$(GREEN)Running benchmarks with automatic visualization...$(NC)"
+	@chmod +x scripts/benchmark_and_visualize.sh
+	@./scripts/benchmark_and_visualize.sh
