@@ -32,7 +32,7 @@
         } \
     } while(0)
 
-constexpr int BLOCK_SIZE = 256;
+constexpr int BLOCK_SIZE = 64;
 
 namespace {
 
@@ -623,7 +623,7 @@ void prepareRules(const SnpSystemConfig& config) {
             CUDA_CHECK(cudaMemcpy(d_rules.rule_count, h_count.data(), local_num_neurons * sizeof(int), cudaMemcpyHostToDevice));
         }
     }
-    
+
     void prepareTopology(const SnpSystemConfig& config) {
         // --- 1. Identify Ranges for all ranks ---
         std::vector<std::pair<int, int>> rank_ranges(mpi_size);

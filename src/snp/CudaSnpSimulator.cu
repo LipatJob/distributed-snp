@@ -19,7 +19,7 @@
     } while(0)
 
 // Optimal block size for most modern GPUs (multiple of warp size 32)
-constexpr int BLOCK_SIZE = 256;
+constexpr int BLOCK_SIZE = 64;
 
 /**
  * @brief Structure of Arrays (SoA) for Neurons on Device

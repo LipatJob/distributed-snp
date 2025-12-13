@@ -10,24 +10,29 @@
 #include <cmath>
 #include <sstream>
 #include <map>
+#include <iostream>
 
 // Forward declare simulator factory functions (from ISnpSimulator.hpp)
 std::unique_ptr<ISnpSimulator> createNaiveCpuSimulator();
 std::unique_ptr<ISnpSimulator> createCudaSimulator();
 std::unique_ptr<ISnpSimulator> createCudaMpiSimulator();
 
+// Forward declare sorter factory functions (from ISort.hpp)
+std::unique_ptr<ISort> createNaiveCpuSnpSort();
+std::unique_ptr<ISort> createCudaSnpSort();
+std::unique_ptr<ISort> createCudaMpiSnpSort();
 
-// Wrapper functions to create simulators for benchmark macro
-inline std::unique_ptr<ISnpSimulator> createNaiveCpuSnpSimulator() {
-    return createNaiveCpuSimulator();
+// Wrapper functions to create sorters for benchmark macro
+inline std::unique_ptr<ISort> createNaiveCpuSnpSorter() {
+    return createNaiveCpuSnpSort();
 }
 
-inline std::unique_ptr<ISnpSimulator> createCudaSnpSimulator() {
-    return createCudaSimulator();
+inline std::unique_ptr<ISort> createCudaSnpSorter() {
+    return createCudaSnpSort();
 }
 
-inline std::unique_ptr<ISnpSimulator> createCudaMpiSnpSimulator() {
-    return createCudaMpiSimulator();
+inline std::unique_ptr<ISort> createCudaMpiSnpSorter() {
+    return createCudaMpiSnpSort();
 }
 
 // ============================================================================
@@ -133,79 +138,6 @@ bool isSorted(const std::vector<int>& data) {
 }
 
 // ============================================================================
-// Helper class to build SNP system for sorting (extracted from SnpSort.cpp)
-// ============================================================================
-
-SnpSystemConfig buildSortingSystem(const std::vector<int>& inputNumbers) {
-    int N = inputNumbers.size();
-    
-    // Layout: [ Inputs (0..N-1) | Sorters (N..2N-1) | Outputs (2N..3N-1) ]
-    int startInput = 0;
-    int startSorter = N;
-    int startOutput = 2 * N;
-    int totalNeurons = 3 * N;
-
-    SnpSystemBuilder builder;
-    
-    // Create all neurons
-    for (int i = 0; i < totalNeurons; ++i) {
-        builder.addNeuron(i, 0);
-    }
-
-    // Build Topology
-    // Inputs -> All Sorters
-    for(int i = 0; i < N; ++i) {
-        for(int s = 0; s < N; ++s) {
-            builder.addSynapse(startInput + i, startSorter + s);
-        }
-    }
-
-    // Sorters -> Outputs
-    for(int s = 0; s < N; ++s) {
-        for(int o = s; o < N; ++o) {
-            builder.addSynapse(startSorter + s, startOutput + o);
-        }
-    }
-
-    // Define Rules
-    // Input Streams (Neurons 0 to N-1)
-    for(int i = 0; i < N; ++i) {
-        int neuronId = startInput + i;
-        int spikes = inputNumbers[i];
-        
-        builder.addNeuron(neuronId, spikes);
-        builder.addRule(neuronId, 1, 1, 1, 0);
-    }
-
-    // Sorters (Neurons N to 2N-1)
-    for(int s = 0; s < N; ++s) {
-        int sorterID = startSorter + s;
-        int target = N - s;
-
-        // 1. Forget High (Higher priority)
-        for(int k = N; k > target; --k) {
-            builder.addRule(sorterID, k, k, 0, 0);
-        }
-        
-        // 2. Fire Exact (at target count)
-        builder.addRule(sorterID, target, target, 1, 0);
-
-        // 3. Forget Low (Lower priority)
-        for(int k = target - 1; k >= 1; --k) {
-            builder.addRule(sorterID, k, k, 0, 0);
-        }
-    }
-
-    // Mark output neurons
-    SnpSystemConfig config = builder.build();
-    for(int o = 0; o < N; ++o) {
-        config.neurons[startOutput + o].is_output = true;
-    }
-    
-    return config;
-}
-
-// ============================================================================
 // Benchmark Fixture
 // ============================================================================
 
@@ -213,8 +145,7 @@ class SortBenchmarkFixture : public benchmark::Fixture {
 protected:
     int rank;
     int world_size;
-    std::unique_ptr<ISnpSimulator> simulator;
-    SnpSystemConfig config;
+    std::unique_ptr<ISort> sorter;
     std::vector<int> testData;
     int maxVal;
     
@@ -223,12 +154,12 @@ public:
         MPI_Comm_rank(MPI_COMM_WORLD, &rank);
         MPI_Comm_size(MPI_COMM_WORLD, &world_size);
         
-        // Note: test data and simulator will be set up in the benchmark itself
+        // Note: test data and sorter will be set up in the benchmark itself
         // because we need different data for each iteration
     }
     
     void TearDown(const ::benchmark::State& state) override {
-        simulator.reset();
+        sorter.reset();
     }
 };
 
@@ -238,88 +169,66 @@ public:
 
 #define BENCHMARK_SORT_IMPL(ImplName, FactoryFunc, Size, MaxVal, Dist) \
     BENCHMARK_DEFINE_F(SortBenchmarkFixture, ImplName##_##Size##_##MaxVal##_##Dist)(benchmark::State& state) { \
-        int rank; \
-        MPI_Comm_rank(MPI_COMM_WORLD, &rank); \
+        /* Setup phase - not timed */ \
+        maxVal = MaxVal; \
         \
-        double totalCommTime = 0.0; \
-        double totalComputeTime = 0.0; \
-        int iterationCount = 0; \
-        \
+        /* Each iteration gets fresh state */ \
         for (auto _ : state) { \
+            /* Pause timing for setup */ \
             state.PauseTiming(); \
             \
-            /* Generate test data */ \
-            testData = generateTestData(Size, MaxVal, Distribution::Dist); \
+            /* Generate fresh test data for this iteration */ \
+            testData = generateTestData(Size, MaxVal, Distribution::Dist, 42 + state.iterations()); \
             \
-            /* Calculate max value for simulation ticks */ \
-            maxVal = 0; \
-            for(int n : testData) { \
-                if(n > maxVal) maxVal = n; \
-            } \
+            /* Create sorter instance */ \
+            sorter = FactoryFunc(); \
             \
-            /* Build SNP system configuration (setup - not timed) */ \
-            config = buildSortingSystem(testData); \
+            /* Load data and build SNP system (not timed) */ \
+            sorter->load(testData.data(), testData.size()); \
             \
-            /* Create simulator (setup - not timed) */ \
-            simulator = FactoryFunc(); \
+            /* All MPI ranks must synchronize before timing */ \
+            MPI_Barrier(MPI_COMM_WORLD); \
             \
-            /* Load system into simulator (setup - not timed) */ \
-            if (!simulator->loadSystem(config)) { \
-                state.SkipWithError("Failed to load SNP system"); \
-                break; \
-            } \
-            \
+            /* Resume timing for actual computation */ \
             state.ResumeTiming(); \
             \
-            /* TIMED SECTION: Only the simulation execution */ \
-            int ticks = maxVal + 3; \
-            simulator->step(ticks); \
+            /* Execute the sort (timed) */ \
+            std::vector<int> result = sorter->execute(); \
             \
+            /* Stop timing before validation */ \
             state.PauseTiming(); \
             \
-            /* Extract results and verify correctness */ \
-            std::vector<int> localState = simulator->getGlobalState(); \
-            std::vector<int> result; \
-            int N = Size; \
-            int startOutput = 2 * N; \
-            for(int o = 0; o < N; ++o) { \
-                int outputIdx = startOutput + o; \
-                if (outputIdx < static_cast<int>(localState.size())) { \
-                    result.push_back(localState[outputIdx]); \
-                } else { \
-                    result.push_back(0); \
+            /* Verify the result is sorted (only on rank 0) */ \
+            if (rank == 0) { \
+                if (!isSorted(result)) { \
+                    state.SkipWithError("Output is not sorted!"); \
+                    break; \
                 } \
             } \
             \
-            if (rank == 0 && !isSorted(result)) { \
-                state.SkipWithError("Sort failed: output not sorted"); \
-            } \
-            \
-            /* Extract communication metrics from performance report */ \
-            std::string perfReport = simulator->getPerformanceReport(); \
+            /* Extract and report communication time from performance report */ \
+            std::string perfReport = sorter->getPerformanceReport(); \
             double commTime = extractCommTime(perfReport); \
             double computeTime = extractComputeTime(perfReport); \
-            totalCommTime += commTime; \
-            totalComputeTime += computeTime; \
-            iterationCount++; \
+            \
+            if (rank == 0 && commTime > 0.0) { \
+                state.counters["CommTime_ms"] = benchmark::Counter(commTime, benchmark::Counter::kAvgIterations); \
+            } \
+            if (rank == 0 && computeTime > 0.0) { \
+                state.counters["ComputeTime_ms"] = benchmark::Counter(computeTime, benchmark::Counter::kAvgIterations); \
+            } \
+            \
+            /* Clean up sorter for next iteration */ \
+            sorter.reset(); \
             \
             state.ResumeTiming(); \
         } \
         \
+        /* Report problem size */ \
         if (rank == 0) { \
-            state.SetItemsProcessed(state.iterations() * Size); \
-            state.SetBytesProcessed(state.iterations() * Size * sizeof(int)); \
-            state.counters["Elements"] = Size; \
-            state.counters["MaxValue"] = MaxVal; \
-            state.counters["Throughput(elem/s)"] = benchmark::Counter( \
-                state.iterations() * Size, \
-                benchmark::Counter::kIsRate \
-            ); \
-            if (iterationCount > 0) { \
-                state.counters["AvgCommTime(ms)"] = totalCommTime / iterationCount; \
-                state.counters["AvgComputeTime(ms)"] = totalComputeTime / iterationCount; \
-                state.counters["CommRatio(%)"] = (totalCommTime / (totalCommTime + totalComputeTime)) * 100.0; \
-            } \
+            state.counters["InputSize"] = benchmark::Counter(Size, benchmark::Counter::kDefaults); \
+            state.counters["MaxValue"] = benchmark::Counter(MaxVal, benchmark::Counter::kDefaults); \
+            state.counters["NumProcesses"] = benchmark::Counter(world_size, benchmark::Counter::kDefaults); \
         } \
     }
 
@@ -329,10 +238,10 @@ public:
 
 double extractCommTime(const std::string& report) {
     // Parse communication time from the performance report
-    // Expected format includes "Communication: X ms" or similar
-    size_t pos = report.find("Communication");
+    // Expected format includes "Comm Time: X ms" or similar
+    size_t pos = report.find("Comm Time");
     if (pos == std::string::npos) {
-        pos = report.find("communication");
+        pos = report.find("Comm Time");
     }
     if (pos == std::string::npos) return 0.0;
     
@@ -355,7 +264,7 @@ double extractComputeTime(const std::string& report) {
     // Expected format includes "Compute: X ms" or similar
     size_t pos = report.find("Compute");
     if (pos == std::string::npos) {
-        pos = report.find("compute");
+        pos = report.find("Compute");
     }
     if (pos == std::string::npos) return 0.0;
     
@@ -470,39 +379,42 @@ double extractComputeTime(const std::string& report) {
 // ============================================================================
 
 // Small inputs
-BENCHMARK_SORT_IMPL(CudaMpiSnpSort, createCudaMpiSnpSimulator, 10, 10, RANDOM)
-BENCHMARK_REGISTER_F(SortBenchmarkFixture, CudaMpiSnpSort_10_10_RANDOM)->Unit(benchmark::kMillisecond);
+// NOTE: ->Iterations(1) is CRITICAL for MPI benchmarks to prevent deadlock
+// All ranks must run the same number of iterations to stay synchronized
+BENCHMARK_SORT_IMPL(CudaMpiSnpSort, createCudaMpiSnpSorter, 10, 10, RANDOM)
+BENCHMARK_REGISTER_F(SortBenchmarkFixture, CudaMpiSnpSort_10_10_RANDOM)->Unit(benchmark::kMillisecond)->Iterations(10);
 
-BENCHMARK_SORT_IMPL(CudaMpiSnpSort, createCudaMpiSnpSimulator, 10, 10, SORTED)
-BENCHMARK_REGISTER_F(SortBenchmarkFixture, CudaMpiSnpSort_10_10_SORTED)->Unit(benchmark::kMillisecond);
+BENCHMARK_SORT_IMPL(CudaMpiSnpSort, createCudaMpiSnpSorter, 10, 10, SORTED)
+BENCHMARK_REGISTER_F(SortBenchmarkFixture, CudaMpiSnpSort_10_10_SORTED)->Unit(benchmark::kMillisecond)->Iterations(10);
 
-BENCHMARK_SORT_IMPL(CudaMpiSnpSort, createCudaMpiSnpSimulator, 10, 10, REVERSE_SORTED)
-BENCHMARK_REGISTER_F(SortBenchmarkFixture, CudaMpiSnpSort_10_10_REVERSE_SORTED)->Unit(benchmark::kMillisecond);
+BENCHMARK_SORT_IMPL(CudaMpiSnpSort, createCudaMpiSnpSorter, 10, 10, REVERSE_SORTED)
+BENCHMARK_REGISTER_F(SortBenchmarkFixture, CudaMpiSnpSort_10_10_REVERSE_SORTED)->Unit(benchmark::kMillisecond)->Iterations(10);
 
-BENCHMARK_SORT_IMPL(CudaMpiSnpSort, createCudaMpiSnpSimulator, 50, 10, RANDOM)
-BENCHMARK_REGISTER_F(SortBenchmarkFixture, CudaMpiSnpSort_50_10_RANDOM)->Unit(benchmark::kMillisecond);
+BENCHMARK_SORT_IMPL(CudaMpiSnpSort, createCudaMpiSnpSorter, 50, 10, RANDOM)
+BENCHMARK_REGISTER_F(SortBenchmarkFixture, CudaMpiSnpSort_50_10_RANDOM)->Unit(benchmark::kMillisecond)->Iterations(10);
 
-// BENCHMARK_SORT_IMPL(CudaMpiSnpSort, createCudaMpiSnpSimulator, 100, 100, RANDOM)
-// BENCHMARK_REGISTER_F(SortBenchmarkFixture, CudaMpiSnpSort_100_100_RANDOM)->Unit(benchmark::kMillisecond);
+BENCHMARK_SORT_IMPL(CudaMpiSnpSort, createCudaMpiSnpSorter, 100, 100, RANDOM)
+BENCHMARK_REGISTER_F(SortBenchmarkFixture, CudaMpiSnpSort_100_100_RANDOM)->Unit(benchmark::kMillisecond)->Iterations(1);
 
-// BENCHMARK_SORT_IMPL(CudaMpiSnpSort, createCudaMpiSnpSimulator, 100, 100, NEARLY_SORTED)
-// BENCHMARK_REGISTER_F(SortBenchmarkFixture, CudaMpiSnpSort_100_100_NEARLY_SORTED)->Unit(benchmark::kMillisecond);
+BENCHMARK_SORT_IMPL(CudaMpiSnpSort, createCudaMpiSnpSorter, 100, 100, NEARLY_SORTED)
+BENCHMARK_REGISTER_F(SortBenchmarkFixture, CudaMpiSnpSort_100_100_NEARLY_SORTED)->Unit(benchmark::kMillisecond)->Iterations(1);
 
-// BENCHMARK_SORT_IMPL(CudaMpiSnpSort, createCudaMpiSnpSimulator, 100, 100, FEW_UNIQUE)
-// BENCHMARK_REGISTER_F(SortBenchmarkFixture, CudaMpiSnpSort_100_100_FEW_UNIQUE)->Unit(benchmark::kMillisecond);
+BENCHMARK_SORT_IMPL(CudaMpiSnpSort, createCudaMpiSnpSorter, 100, 100, FEW_UNIQUE)
+BENCHMARK_REGISTER_F(SortBenchmarkFixture, CudaMpiSnpSort_100_100_FEW_UNIQUE)->Unit(benchmark::kMillisecond)->Iterations(1);
 
-// BENCHMARK_SORT_IMPL(CudaMpiSnpSort, createCudaMpiSnpSimulator, 100, 100, UNIFORM)
-// BENCHMARK_REGISTER_F(SortBenchmarkFixture, CudaMpiSnpSort_100_100_UNIFORM)->Unit(benchmark::kMillisecond);
+BENCHMARK_SORT_IMPL(CudaMpiSnpSort, createCudaMpiSnpSorter, 100, 100, UNIFORM)
+BENCHMARK_REGISTER_F(SortBenchmarkFixture, CudaMpiSnpSort_100_100_UNIFORM)->Unit(benchmark::kMillisecond)->Iterations(1);
 
-// // Medium inputs
-// BENCHMARK_SORT_IMPL(CudaMpiSnpSort, createCudaMpiSnpSimulator, 500, 100, RANDOM)
-// BENCHMARK_REGISTER_F(SortBenchmarkFixture, CudaMpiSnpSort_500_100_RANDOM)->Unit(benchmark::kMillisecond);
+// Medium inputs
 
-// BENCHMARK_SORT_IMPL(CudaMpiSnpSort, createCudaMpiSnpSimulator, 1000, 1000, RANDOM)
-// BENCHMARK_REGISTER_F(SortBenchmarkFixture, CudaMpiSnpSort_1000_1000_RANDOM)->Unit(benchmark::kMillisecond);
+BENCHMARK_SORT_IMPL(CudaMpiSnpSort, createCudaMpiSnpSorter, 500, 100, RANDOM)
+BENCHMARK_REGISTER_F(SortBenchmarkFixture, CudaMpiSnpSort_500_100_RANDOM)->Unit(benchmark::kMillisecond)->Iterations(1);
 
-// BENCHMARK_SORT_IMPL(CudaMpiSnpSort, createCudaMpiSnpSimulator, 1000, 1000, NEARLY_SORTED)
-// BENCHMARK_REGISTER_F(SortBenchmarkFixture, CudaMpiSnpSort_1000_1000_NEARLY_SORTED)->Unit(benchmark::kMillisecond);
+BENCHMARK_SORT_IMPL(CudaMpiSnpSort, createCudaMpiSnpSorter, 1000, 1000, RANDOM)
+BENCHMARK_REGISTER_F(SortBenchmarkFixture, CudaMpiSnpSort_1000_1000_RANDOM)->Unit(benchmark::kMillisecond)->Iterations(1);
+
+BENCHMARK_SORT_IMPL(CudaMpiSnpSort, createCudaMpiSnpSorter, 1000, 1000, NEARLY_SORTED)
+BENCHMARK_REGISTER_F(SortBenchmarkFixture, CudaMpiSnpSort_1000_1000_NEARLY_SORTED)->Unit(benchmark::kMillisecond)->Iterations(1);
 
 // // Large inputs
 // BENCHMARK_SORT_IMPL(CudaMpiSnpSort, createCudaMpiSnpSimulator, 2000, 2000, RANDOM)
@@ -538,7 +450,24 @@ int main(int argc, char** argv) {
         return 1;
     }
     
-    ::benchmark::RunSpecifiedBenchmarks();
+    // CRITICAL: All MPI ranks must run benchmarks together to avoid deadlock
+    // in collective operations (MPI_Allgatherv, MPI_Barrier, etc.)
+    // Only rank 0 should output results to avoid duplicate reporting
+    if (rank == 0) {
+        ::benchmark::RunSpecifiedBenchmarks();
+    } else {
+        // Non-root ranks: run benchmarks but suppress console output
+        // We create a null reporter that discards all output
+        class NullReporter : public ::benchmark::BenchmarkReporter {
+        public:
+            bool ReportContext(const Context&) override { return true; }
+            void ReportRuns(const std::vector<Run>&) override {}
+            void Finalize() override {}
+        };
+        
+        NullReporter null_reporter;
+        ::benchmark::RunSpecifiedBenchmarks(&null_reporter);
+    }
     
     // Cleanup
     ::benchmark::Shutdown();
