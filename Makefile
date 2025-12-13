@@ -30,7 +30,8 @@ NC := \033[0m
 .PHONY: all help configure build debug release clean rebuild install check-deps lint \
         generate-hostfile distribute check-nodes \
         deploy-tests test-distributed run-distributed \
-        benchmark-sort benchmark-distributed compare-benchmarks visualize-benchmarks benchmark-and-visualize
+        benchmark-sort benchmark-distributed compare-benchmarks visualize-benchmarks benchmark-and-visualize \
+        profile-build profile-distribute profile-prepare
 
 # Default target
 all: build
@@ -58,6 +59,16 @@ help:
 	@echo ""
 	@echo "$(GREEN)Benchmark Targets:$(NC)"
 	@echo "  benchmark-sort           - Run sort benchmarks locally"
+	@echo "  benchmark-distributed    - Run sort benchmarks across distributed nodes"
+	@echo "  compare-benchmarks       - Compare benchmark results (text)"
+	@echo "  visualize-benchmarks     - Generate visualization plots from results"
+	@echo "  benchmark-and-visualize  - Run benchmarks and auto-generate visualizations"
+	@echo ""
+	@echo "$(GREEN)Profiling Targets (NVIDIA Nsight Systems):$(NC)"
+	@echo "  profile-build        - Build profiling executable (snp_profile)"
+	@echo "  profile-distribute   - Distribute profiler to remote nodes"
+	@echo "  profile-prepare      - Build, distribute, and prepare profiler for Nsight Systems"
+	@echo ""
 	@echo "  benchmark-distributed    - Run sort benchmarks across distributed nodes"
 	@echo "  compare-benchmarks       - Compare benchmark results (text)"
 	@echo "  visualize-benchmarks     - Generate visualization plots from results"
@@ -193,3 +204,44 @@ benchmark-and-visualize: build
 	@echo "$(GREEN)Running benchmarks with automatic visualization...$(NC)"
 	@chmod +x scripts/benchmark_and_visualize.sh
 	@./scripts/benchmark_and_visualize.sh
+# ============================================================================
+# Profiling Targets (NVIDIA Nsight Systems)
+# ============================================================================
+
+profile-build: configure
+	@echo "$(GREEN)Building profiler executable (snp_profile)...$(NC)"
+	@cmake --build $(BUILD_DIR) --target snp_profile -j $(JOBS)
+	@echo "$(GREEN)Profiler build complete!$(NC)"
+	@echo "$(BLUE)Location: $(BUILD_DIR)/snp_profile$(NC)"
+
+profile-distribute: profile-build generate-hostfile
+	@echo "$(GREEN)Distributing profiler to remote nodes...$(NC)"
+	@if [ -f $(BUILD_DIR)/snp_profile ]; then \
+		for node in $(NODES); do \
+			echo "$(BLUE)Copying to $$node...$(NC)"; \
+			scp $(BUILD_DIR)/snp_profile $(REMOTE_USER)@$$node:$(REMOTE_DIR)/$(BUILD_DIR)/; \
+			echo "$(GREEN)✓ $$node$(NC)"; \
+		done; \
+		echo "$(GREEN)Profiler distribution complete!$(NC)"; \
+	else \
+		echo "$(YELLOW)ERROR: snp_profile not found at $(BUILD_DIR)/snp_profile$(NC)"; \
+		exit 1; \
+	fi
+
+profile-prepare: profile-distribute
+	@echo "$(GREEN)Profiler ready for NVIDIA Nsight Systems!$(NC)"
+	@echo "$(BLUE)Usage with Nsight Systems:$(NC)"
+	@echo "  1. Open NVIDIA Nsight Systems"
+	@echo "  2. Create new profile session"
+	@echo "  3. Command: mpirun -np 2 --host localhost,10.0.0.2 $(REMOTE_DIR)/$(BUILD_DIR)/bin/snp_profile [options]"
+	@echo "  4. Or use the provided script: $(REMOTE_DIR)/scripts/run_profile.sh"
+	@echo ""
+	@echo "$(BLUE)Profile script location: $(REMOTE_DIR)/scripts/run_profile.sh$(NC)"
+	@echo "$(BLUE)Profiler location: $(REMOTE_DIR)/$(BUILD_DIR)/snp_profile$(NC)"
+	@echo "$(BLUE)Hostfile: $(REMOTE_DIR)/$(HOSTFILE)$(NC)"
+	@echo ""
+	@echo "$(BLUE)Quick profiling options:$(NC)"
+	@echo "  -s <name>   Simulator name (NaiveCudaMpiSnp, CudaMpiSnp) (default: CudaMpiSnp)"
+	@echo "  -n <size>   Array size (default: 1000)"
+	@echo "  -i <iter>   Number of iterations (default: 3)"
+	@echo ""

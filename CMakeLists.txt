@@ -238,6 +238,29 @@ if(BUILD_TESTS)
     install(TARGETS sort_benchmark
         RUNTIME DESTINATION bin
     )
+
+    # ============================================================================
+    # Profiling Executables
+    # ============================================================================
+    
+    # SNP Profiler for NVIDIA Nsight Systems
+    add_executable(snp_profile
+        src/snp/snp_profile.cpp
+    )
+    
+    target_link_libraries(snp_profile PRIVATE
+        snp_system
+        MPI::MPI_CXX
+    )
+    
+    target_include_directories(snp_profile PRIVATE
+        ${PROJECT_SOURCE_DIR}/src/snp
+    )
+    
+    # Install profiler executable
+    install(TARGETS snp_profile
+        RUNTIME DESTINATION bin
+    )
 endif()
 
 # ============================================================================
