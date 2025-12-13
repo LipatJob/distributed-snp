@@ -6,9 +6,9 @@ This document details the architectural decisions and implementation logic for t
 
 The implementation follows the **"Distributed State, Replicated Synapses"** pattern. This approach prioritizes implementation simplicity and correctness over minimal memory footprint.
 
-* **Distributed Neurons:** The state vector $C^{(k)}$ (configuration) is partitioned across MPI ranks. Each rank owns a disjoint subset of neurons[cite: 26].
+* **Distributed Neurons:** The state vector $C^{(k)}$ (configuration) is partitioned across MPI ranks. Each rank owns a disjoint subset of neurons.
 * **Replicated Synapses:** The connectivity graph (synapses) is fully replicated on every GPU. This avoids complex graph partitioning and ghost-cell logic, simplifying the "spike propagation" phase to a linear scan.
-* **Global Synchronization:** The system synchronizes the "production vector" (spikes emitted) at every time step, ensuring all nodes have a coherent view of system activity[cite: 7].
+* **Global Synchronization:** The system synchronizes the "production vector" (spikes emitted) at every time step, ensuring all nodes have a coherent view of system activity.
 
 ## 2. Partitioning Strategy
 
@@ -26,9 +26,9 @@ To optimize for GPU throughput, we use **Structure of Arrays (SoA)** layouts.
 
 ### Device: `LocalNeuronData`
 Stores the state for neurons owned by the local rank.
-* `current_spikes`: $C^{(k)}$ for local neurons[cite: 26].
-* `delay_timer`: Tracks the delay $d$ for firing rules[cite: 17].
-* `is_open`: Boolean status mask $St^{(k)}$[cite: 27].
+* `current_spikes`: $C^{(k)}$ for local neurons.
+* `delay_timer`: Tracks the delay $d$ for firing rules.
+* `is_open`: Boolean status mask $St^{(k)}$.
 * `pending_emission`: Spikes scheduled for future release.
 
 ### Device: `GlobalSynapseData`
@@ -45,13 +45,13 @@ The simulation proceeds in discrete time steps $k$. Each step consists of three 
 **Kernel:** `kLocalComputeAndProduce`
 **Goal:** Determine which local neurons fire and how many spikes they produce.
 
-1.  **Update Delays:** Decrement `delay_timer` for closed neurons. If a timer reaches 0, the neuron opens ($St_i = 1$)[cite: 19].
+1.  **Update Delays:** Decrement `delay_timer` for closed neurons. If a timer reaches 0, the neuron opens ($St_i = 1$).
 2.  **Rule Selection:** For every open neuron, the kernel scans applicable rules.
-    * **Determinism:** As per the reference guide, we strictly ignore non-determinism and select the first applicable rule (lowest ID)[cite: 23, 35].
+    * **Determinism:** As per the reference guide, we strictly ignore non-determinism and select the first applicable rule (lowest ID).
 3.  **Consumption & Production:**
     * Spikes are consumed from `current_spikes`.
-    * If `rule.delay > 0`, the neuron closes, and production is stored in `pending_emission`[cite: 18].
-    * If `rule.delay == 0`, spikes are added immediately to the output buffer `local_production`[cite: 14].
+    * If `rule.delay > 0`, the neuron closes, and production is stored in `pending_emission`.
+    * If `rule.delay == 0`, spikes are added immediately to the output buffer `local_production`.
 
 ### Phase 2: Global Synchronization (MPI)
 **Operation:** `MPI_Allgatherv`
@@ -61,7 +61,7 @@ The simulation proceeds in discrete time steps $k$. Each step consists of three 
 2.  `MPI_Allgatherv` combines these chunks into a `global_production` vector (size $N_{total}$).
 3.  The full `global_production` vector is copied back to Device memory on all ranks.
 
-This vector corresponds to the term $(Iv^{(k)} \cdot M_{\Pi})$ in the transition equation, representing the net spikes generated before distribution[cite: 33].
+This vector corresponds to the term $(Iv^{(k)} \cdot M_{\Pi})$ in the transition equation, representing the net spikes generated before distribution.
 
 ### Phase 3: Global Distribution (CUDA)
 **Kernel:** `kDistributeGlobalSpikes`
@@ -72,7 +72,7 @@ This vector corresponds to the term $(Iv^{(k)} \cdot M_{\Pi})$ in the transition
     * Check `global_production[src]`. If 0, skip.
     * Check if `dest` belongs to the **current rank**.
     * If both are true, add `spikes * weight` to `local_neurons[dest]`.
-3.  **Masking:** Spikes are only added if `is_open[dest]` is true, satisfying the system requirement that closed neurons ignore inputs[cite: 34].
+3.  **Masking:** Spikes are only added if `is_open[dest]` is true, satisfying the system requirement that closed neurons ignore inputs.
 
 ## 5. Edge Case Handling
 
