@@ -10,6 +10,76 @@ The simulator partitions the Spiking Neural P System across multiple MPI ranks. 
 3.  **Intra-Node Routing:** Handling synapses where both Source and Destination are local ($u, v \in P_i$).
 4.  **Inter-Node Routing:** Handling "Export" synapses ($u \in P_i, v \notin P_i$) and "Import" synapses ($u \notin P_i, v \in P_i$).
 
+### System Partitioning Visualization
+
+Consider a system with 12 neurons distributed across 3 MPI ranks:
+
+```
+Global Neuron Graph:
+┌─────────────────────────────────────────────────────────────────┐
+│  N0 ──→ N1 ──→ N2 ──→ N3                                       │
+│   ↓      ↓      ↓      ↓                                       │
+│  N4 ──→ N5 ──→ N6 ──→ N7                                       │
+│   ↓      ↓      ↓      ↓                                       │
+│  N8 ──→ N9 ──→ N10 ──→ N11                                     │
+└─────────────────────────────────────────────────────────────────┘
+
+After Partitioning (4 neurons per rank):
+┌─────────────────────┐   ┌─────────────────────┐   ┌─────────────────────┐
+│   Rank 0 (GPU 0)    │   │   Rank 1 (GPU 1)    │   │   Rank 2 (GPU 2)    │
+│   Neurons: 0-3      │   │   Neurons: 4-7      │   │   Neurons: 8-11     │
+├─────────────────────┤   ├─────────────────────┤   ├─────────────────────┤
+│  Local: N0 ──→ N1   │   │  Local: N4 ──→ N5   │   │  Local: N8 ──→ N9   │
+│         N1 ──→ N2   │   │         N5 ──→ N6   │   │         N9 ──→ N10  │
+│         N2 ──→ N3   │   │         N6 ──→ N7   │   │         N10 ──→ N11 │
+│                     │   │                     │   │                     │
+│  Export: N0 ──→ N4  │   │  Export: N4 ──→ N8  │   │  (No exports)       │
+│          N1 ──→ N5  │   │          N5 ──→ N9  │   │                     │
+│          N2 ──→ N6  │   │          N6 ──→ N10 │   │                     │
+│          N3 ──→ N7  │   │          N7 ──→ N11 │   │                     │
+│                     │   │                     │   │                     │
+│  Import: N0 ← (ext) │   │  Import: N4 ← N0    │   │  Import: N8 ← N4    │
+│          N1 ← (ext) │   │          N5 ← N1    │   │          N9 ← N5    │
+│          N2 ← (ext) │   │          N6 ← N2    │   │          N10 ← N6   │
+│          N3 ← (ext) │   │          N7 ← N3    │   │          N11 ← N7   │
+└─────────────────────┘   └─────────────────────┘   └─────────────────────┘
+         ↓                          ↓                          ↓
+    [GPU Memory]              [GPU Memory]              [GPU Memory]
+```
+
+### Synapse Classification Example
+
+For Rank 0 (owns neurons 0-3):
+
+```
+Input Synapses (from config):
+  N0 → N1  (source=0, dest=1)  ✓ Local  (0 ∈ [0,3], 1 ∈ [0,3])
+  N1 → N2  (source=1, dest=2)  ✓ Local  (1 ∈ [0,3], 2 ∈ [0,3])
+  N0 → N4  (source=0, dest=4)  ✗ Export (0 ∈ [0,3], 4 ∉ [0,3]) → to Rank 1
+  N1 → N5  (source=1, dest=5)  ✗ Export (1 ∈ [0,3], 5 ∉ [0,3]) → to Rank 1
+  N2 → N6  (source=2, dest=6)  ✗ Export (2 ∈ [0,3], 6 ∉ [0,3]) → to Rank 1
+
+Classification Result:
+┌──────────────────────────────────────────────────────────────┐
+│ DeviceLocalSynapseData (stays on GPU)                        │
+├──────────────────┬──────────────────┬───────────────────────┤
+│ source_local_idx │ dest_local_idx   │ weight                │
+├──────────────────┼──────────────────┼───────────────────────┤
+│        0         │        1         │   1                   │
+│        1         │        2         │   1                   │
+└──────────────────┴──────────────────┴───────────────────────┘
+
+┌──────────────────────────────────────────────────────────────┐
+│ DeviceExportSynapseData (GPU → Export Buffer)                │
+├──────────────────┬──────────────────┬──────────┬────────────┤
+│ source_local_idx │ export_buffer_idx│ weight   │ dest_rank  │
+├──────────────────┼──────────────────┼──────────┼────────────┤
+│        0         │        0         │   1      │    1       │
+│        1         │        1         │   1      │    1       │
+│        2         │        2         │   1      │    1       │
+└──────────────────┴──────────────────┴──────────┴────────────┘
+```
+
 
 ## 2. Data Structures (Structure of Arrays)
 
