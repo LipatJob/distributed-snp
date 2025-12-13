@@ -149,6 +149,75 @@ A critical part of this implementation is the setup phase, where the communicati
     * **Import Map**: The rank determines which *local* neurons are fed by remote ranks. It assigns each a slot in the Import Buffer.
     * **Consistency**: The code relies on a deterministic sorting of synapse targets (by Global ID) to ensure that Rank A knows exactly which slot in the buffer corresponds to which neuron on Rank B, without sending explicit metadata every step.
 
+### Topology Construction Visualization
+
+```
+Initial System Configuration (12 neurons, 15 synapses):
+┌──────────────────────────────────────────────────────────────┐
+│ Synapses: [(0,1), (1,2), (2,3), (0,4), (1,5), (2,6), (3,7), │
+│            (4,5), (5,6), (6,7), (4,8), (5,9), (6,10), (7,11)]│
+└──────────────────────────────────────────────────────────────┘
+
+Step 1: Partition Neurons (3 ranks, contiguous blocks)
+┌─────────────┬─────────────┬─────────────┐
+│   Rank 0    │   Rank 1    │   Rank 2    │
+│  [0, 1, 2, 3]  [4, 5, 6, 7]  [8, 9, 10, 11]
+└─────────────┴─────────────┴─────────────┘
+
+Step 2: Classify Synapses for Rank 0
+┌────────────────────────────────────────────────────────────┐
+│ Synapse (0,1):  src=0∈[0,3] ✓  dest=1∈[0,3] ✓  → LOCAL   │
+│ Synapse (1,2):  src=1∈[0,3] ✓  dest=2∈[0,3] ✓  → LOCAL   │
+│ Synapse (2,3):  src=2∈[0,3] ✓  dest=3∈[0,3] ✓  → LOCAL   │
+│ Synapse (0,4):  src=0∈[0,3] ✓  dest=4∉[0,3] ✗  → EXPORT  │
+│ Synapse (1,5):  src=1∈[0,3] ✓  dest=5∉[0,3] ✗  → EXPORT  │
+│ Synapse (2,6):  src=2∈[0,3] ✓  dest=6∉[0,3] ✗  → EXPORT  │
+│ Synapse (3,7):  src=3∈[0,3] ✓  dest=7∉[0,3] ✗  → EXPORT  │
+│ Synapse (4,0):  src=4∉[0,3] ✗  dest=0∈[0,3] ✓  → IMPORT  │
+└────────────────────────────────────────────────────────────┘
+
+Step 3: Build Export Map (Rank 0 → Rank 1)
+┌──────────────────────────────────────────────────────────────┐
+│ Remote destinations: {4, 5, 6, 7} (all in Rank 1's range)   │
+│                                                               │
+│ Export Buffer Slot Assignment:                               │
+│   Global Neuron 4 → Buffer Index 0                          │
+│   Global Neuron 5 → Buffer Index 1                          │
+│   Global Neuron 6 → Buffer Index 2                          │
+│   Global Neuron 7 → Buffer Index 3                          │
+│                                                               │
+│ Export Synapse Mapping:                                      │
+│   (0,4): source_local=0, buffer_idx=0, weight=1, rank=1     │
+│   (1,5): source_local=1, buffer_idx=1, weight=1, rank=1     │
+│   (2,6): source_local=2, buffer_idx=2, weight=1, rank=1     │
+│   (3,7): source_local=3, buffer_idx=3, weight=1, rank=1     │
+└──────────────────────────────────────────────────────────────┘
+
+Step 4: Build Import Map (Rank 0 ← Other Ranks)
+┌──────────────────────────────────────────────────────────────┐
+│ Assuming external neuron X feeds neuron 0:                   │
+│                                                               │
+│ Import Buffer Slot Assignment:                               │
+│   External → Local Neuron 0 → Buffer Index 0                │
+│                                                               │
+│ Import Mapping:                                              │
+│   buffer_idx=0 → dest_local=0                               │
+└──────────────────────────────────────────────────────────────┘
+
+Step 5: Communication Graph (between ranks)
+┌─────────────┐             ┌─────────────┐             ┌─────────────┐
+│   Rank 0    │   4 msgs    │   Rank 1    │   4 msgs    │   Rank 2    │
+│             │────────────→│             │────────────→│             │
+│  neurons    │  [4,5,6,7]  │  neurons    │  [8,9,10,11]│  neurons    │
+│   0-3       │             │   4-7       │             │   8-11      │
+│             │             │             │             │             │
+└─────────────┘             └─────────────┘             └─────────────┘
+      ↑                           ↑                           ↑
+      │                           │                           │
+  No imports              Import from R0            Import from R1
+  from others             4 values                  4 values
+```
+
 ## 5. Key Optimizations
 
 * **Sender-Side Weighting**: Synaptic weights are applied before communication. If multiple synapses connect to the same remote neuron with different weights, they are summed into a single integer transmission, reducing bandwidth.
