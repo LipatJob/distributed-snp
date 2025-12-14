@@ -1,5 +1,6 @@
 #pragma once
 #include "SnpSystemConfig.hpp"
+#include "IPartitioner.hpp"
 #include <vector>
 #include <cstdint>
 #include <memory>
@@ -57,5 +58,5 @@ public:
 std::unique_ptr<ISnpSimulator> createNaiveCpuSimulator();
 std::unique_ptr<ISnpSimulator> createCudaSimulator();
 std::unique_ptr<ISnpSimulator> createSparseCudaSimulator();
-std::unique_ptr<ISnpSimulator> createNaiveCudaMpiSimulator();
-std::unique_ptr<ISnpSimulator> createCudaMpiSimulator();
+std::unique_ptr<ISnpSimulator> createNaiveCudaMpiSimulator(PartitionerType partitionerType = PartitionerType::LINEAR);
+std::unique_ptr<ISnpSimulator> createCudaMpiSimulator(PartitionerType partitionerType = PartitionerType::LINEAR);
