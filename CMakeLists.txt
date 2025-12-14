@@ -10,6 +10,7 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CUDA_STANDARD 17)
 set(CMAKE_CUDA_STANDARD_REQUIRED ON)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # Default to Release build if not specified
 if(NOT CMAKE_BUILD_TYPE)
@@ -79,7 +80,7 @@ target_link_libraries(snp_sort PUBLIC snp_system)
 # ============================================================================
 
 # Profiling
-add_executable(snp_profile src/profiling/SnpProfile.cpp)
+add_executable(snp_profile profiling/SnpProfile.cpp)
 target_link_libraries(snp_profile PRIVATE snp_sort snp_system MPI::MPI_CXX)
 
 # ============================================================================

@@ -9,6 +9,8 @@
 #include <functional>
 #include <string>
 #include <iomanip>
+#include <cuda_profiler_api.h>
+
 
 // ============================================================================
 // SNP Implementations Factory Functions (Add new simulators here)
@@ -88,14 +90,16 @@ void profileImplementation(const ProfileConfig& config, int rank, int worldSize)
     // Load data (preparation phase - not profiled by nsys)
     sorter->load(data.data(), data.size());
     
-    
     if (rank == 0) {
         std::cout << "Starting execution...\n";
     }
     
+    cudaProfilerStart();
+
     // Execute sorting (THIS IS THE SECTION PROFILED BY NSYS)
     auto result = sorter->execute();
-    
+
+    cudaProfilerStop();
     
     // Verify results on rank 0
     if (rank == 0) {
@@ -143,8 +147,8 @@ int main(int argc, char** argv) {
     }
     
     // Define medium-sized array (similar to benchmark suite)
-    const size_t MEDIUM_SIZE = 256;
-    const int MEDIUM_MAX = 256;
+    const size_t MEDIUM_SIZE = 128;
+    const int MEDIUM_MAX = 128;
     
     // CPU Implementation
     if (targetImpl.empty() || targetImpl == "cpu" || targetImpl == "all") {

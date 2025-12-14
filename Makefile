@@ -65,30 +65,15 @@ $(BUILD_DIR)/CMakeCache.txt: CMakeLists.txt
 
 build: $(BUILD_DIR)/CMakeCache.txt ## Build the project (incremental)
 	@echo "$(GREEN)Building project...$(NC)"
+	@echo "Using ccache: $(if $(CCACHE_EXE),yes,no). Using ninja : $(if $(NINJA_EXE),yes,no)"
 	@cmake --build $(BUILD_DIR) -j $(JOBS)
 
 clean: ## Clean build artifacts
 	@echo "$(YELLOW)Cleaning build directory...$(NC)"
 	@cmake --build $(BUILD_DIR) --target clean 2>/dev/null || rm -rf $(BUILD_DIR)
 
-distclean: ## Deep clean (removes build dir entirely)
-	@rm -rf $(BUILD_DIR) $(HOSTFILE)
-
-rebuild: distclean build ## Full clean and rebuild
-
-install: build ## Install binaries
-	@cmake --install $(BUILD_DIR)
-
 compile-commands: $(BUILD_DIR)/CMakeCache.txt ## Link compile_commands.json for LSP support
 	@ln -sf $(BUILD_DIR)/compile_commands.json .
-
-# --- Code Quality ---
-
-lint: ## Run clang-tidy
-	@echo "$(GREEN)Running linter...$(NC)"
-	@cmake --build $(BUILD_DIR) --target lint 2>/dev/null || \
-	find src tests -type f \( -name '*.cpp' -o -name '*.hpp' \) -print0 | \
-	xargs -0 -P$(JOBS) -I{} clang-tidy {} -- -std=c++17 -I./src
 
 # --- Distribution & MPI ---
 
