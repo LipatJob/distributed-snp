@@ -400,7 +400,6 @@ public:
         std::vector<int> partition;
         if (mpi_rank == 0)
         {
-            std::cout << "Partitioning system using: " << IPartitioner::getPartitionerName(partitioner->getType()) << std::endl;
             partition = partitioner->partition(original_config, mpi_size);
         }
 

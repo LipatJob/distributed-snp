@@ -319,8 +319,8 @@ public:
         }
 
         std::vector<int> partition;
-        if (mpi_rank == 0) {
-            std::cout << "Naive Simulator Partitioning using: " << IPartitioner::getPartitionerName(partitioner->getType()) << std::endl;
+        if (mpi_rank == 0)
+        {
             partition = partitioner->partition(original_config, mpi_size);
         }
 

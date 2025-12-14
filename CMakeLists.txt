@@ -179,8 +179,8 @@ if(BUILD_TESTS)
 
     # Use MPI to run tests (use 2 processes to avoid slot issues)
     add_test(NAME MatrixOpsTest 
-             COMMAND ${MPIEXEC_EXECUTABLE} ${MPIEXEC_NUMPROC_FLAG} 2 --host localhost,10.0.0.2
-                     ${MPIEXEC_PREFLAGS} $<TARGET_FILE:test_matrix_ops> ${MPIEXEC_POSTFLAGS} --allow-run-as-root --oversubscribe)
+             COMMAND ${MPIEXEC_EXECUTABLE} ${MPIEXEC_NUMPROC_FLAG} 2 --host localhost --allow-run-as-root --oversubscribe
+                     ${MPIEXEC_PREFLAGS} $<TARGET_FILE:test_matrix_ops> ${MPIEXEC_POSTFLAGS})
 
     # SNP Simulator Tests
     add_executable(test_snp_simulator
@@ -197,8 +197,8 @@ if(BUILD_TESTS)
 
     # Use MPI to run SNP simulator tests
     add_test(NAME SnpSimulatorTest
-             COMMAND ${MPIEXEC_EXECUTABLE} ${MPIEXEC_NUMPROC_FLAG} 2 --host localhost,10.0.0.2
-                     ${MPIEXEC_PREFLAGS} $<TARGET_FILE:test_snp_simulator> ${MPIEXEC_POSTFLAGS} --allow-run-as-root --oversubscribe)
+             COMMAND ${MPIEXEC_EXECUTABLE} ${MPIEXEC_NUMPROC_FLAG} 2 --host localhost --allow-run-as-root --oversubscribe
+                     ${MPIEXEC_PREFLAGS} $<TARGET_FILE:test_snp_simulator> ${MPIEXEC_POSTFLAGS})
 
     # Partitioner Tests
     add_executable(test_partitioner
@@ -213,8 +213,8 @@ if(BUILD_TESTS)
     )
 
     add_test(NAME PartitionerTest
-        COMMAND ${MPIEXEC_EXECUTABLE} ${MPIEXEC_NUMPROC_FLAG} 1
-        ${MPIEXEC_PREFLAGS} $<TARGET_FILE:test_partitioner> ${MPIEXEC_POSTFLAGS} --allow-run-as-root --oversubscribe)
+             COMMAND ${MPIEXEC_EXECUTABLE} ${MPIEXEC_NUMPROC_FLAG} 2 --host localhost --allow-run-as-root --oversubscribe
+                     ${MPIEXEC_PREFLAGS} $<TARGET_FILE:test_partitioner> ${MPIEXEC_POSTFLAGS})
 
     # SNP Sort Tests
     add_executable(test_sort
@@ -231,8 +231,8 @@ if(BUILD_TESTS)
 
     # Use MPI to run SNP sort tests
     add_test(NAME SnpSortTest
-             COMMAND ${MPIEXEC_EXECUTABLE} ${MPIEXEC_NUMPROC_FLAG} 2 --host localhost,10.0.0.2
-                     ${MPIEXEC_PREFLAGS} $<TARGET_FILE:test_sort> ${MPIEXEC_POSTFLAGS} --allow-run-as-root --oversubscribe)
+             COMMAND ${MPIEXEC_EXECUTABLE} ${MPIEXEC_NUMPROC_FLAG} 2 --host localhost --allow-run-as-root --oversubscribe
+                     ${MPIEXEC_PREFLAGS} $<TARGET_FILE:test_sort> ${MPIEXEC_POSTFLAGS})
     
     # ============================================================================
     # Benchmarks
