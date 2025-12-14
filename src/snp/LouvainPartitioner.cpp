@@ -10,15 +10,20 @@ std::vector<int> LouvainPartitioner::partition(const SnpSystemConfig& config, in
     if (num_partitions <= 1) return std::vector<int>(config.neurons.size(), 0);
 
     // 1. Build Graph (Undirected, Weighted)
+    std::cout << "[Louvain] Building graph..." << std::endl;
     Graph graph = buildGraph(config);
+    std::cout << "[Louvain] Graph built. Nodes: " << graph.num_nodes << ", Total Weight: " << graph.total_weight << std::endl;
 
     // 2. Run Louvain (Modularity Optimization)
     // For simplicity, we run one pass of modularity optimization (Phase 1).
     // A full implementation would recursively aggregate nodes, but Phase 1 
     // often provides sufficient granularity for load balancing.
+    std::cout << "[Louvain] Running modularity optimization..." << std::endl;
     std::vector<int> communities = runLouvain(graph);
+    std::cout << "[Louvain] Modularity optimization done." << std::endl;
 
     // 3. Balance Partitions (Bin Packing)
+    std::cout << "[Louvain] Balancing partitions..." << std::endl;
     return balancePartitions(communities, graph.num_nodes, num_partitions);
 }
 
@@ -92,6 +97,7 @@ std::vector<int> LouvainPartitioner::runLouvain(const Graph& graph) {
     std::mt19937 rng(42); // Deterministic seed
 
     while (improvement && iter < max_iter) {
+        std::cout << "[Louvain] Iteration " << iter << std::endl;
         improvement = false;
         std::shuffle(nodes.begin(), nodes.end(), rng);
 

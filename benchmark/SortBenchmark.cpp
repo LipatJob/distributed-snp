@@ -1,6 +1,7 @@
 #include "../src/sort/ISort.hpp"
 #include "../src/snp/ISnpSimulator.hpp"
 #include "../src/snp/SnpSystemConfig.hpp"
+#include "../src/snp/IPartitioner.hpp"
 #include <benchmark/benchmark.h>
 #include <mpi.h>
 #include <algorithm>
@@ -17,11 +18,7 @@
 // ============================================================================
 
 // Forward declarations
-std::unique_ptr<ISort> createNaiveCpuSnpSort();
-std::unique_ptr<ISort> createCudaSnpSort();
-std::unique_ptr<ISort> createSparseCudaSnpSort();
-std::unique_ptr<ISort> createNaiveCudaMpiSnpSort();
-std::unique_ptr<ISort> createCudaMpiSnpSort();
+// (Declarations are now in ISort.hpp)
 
 // Type alias for cleaner code
 using SorterFactory = std::function<std::unique_ptr<ISort>()>;
@@ -188,6 +185,7 @@ public:
 
 // Helper to register a specific simulator with a list of configurations
 void RegisterSimulator(std::string name, SorterFactory factory, const std::vector<BenchUtils::TestConfig>& configs) {
+    std::cout << "Registering " << name << " with " << configs.size() << " configs." << std::endl;
     for (const auto& cfg : configs) {
         std::string testName = name + "/" + BenchUtils::DistToString(cfg.dist) + "/" + std::to_string(cfg.size) + "/" + std::to_string(cfg.maxVal);
         
@@ -214,6 +212,12 @@ void RegisterSimulator(std::string name, SorterFactory factory, const std::vecto
 
 namespace Suites {
     using namespace BenchUtils;
+
+    const std::vector<TestConfig> Tiny = {
+        {"Tiny_Sort", 10, 10, Distribution::SORTED, 1},
+        {"Tiny_RevSort", 10, 10, Distribution::REVERSE_SORTED, 1},
+        {"Tiny_Rand", 10, 10, Distribution::RANDOM, 1},
+    };
 
     const std::vector<TestConfig> Small = {
         {"Small_Sort", 100, 100, Distribution::SORTED, 25},
@@ -267,13 +271,32 @@ int main(int argc, char** argv) {
     RegisterSimulator("SparseCudaSnp", createSparseCudaSnpSort, Suites::Medium);
 
     // 4. Naive CUDA/MPI
-    RegisterSimulator("NaiveCudaMpiSnp", createNaiveCudaMpiSnpSort, Suites::Small);
-    RegisterSimulator("NaiveCudaMpiSnp", createNaiveCudaMpiSnpSort, Suites::Medium);
+    RegisterSimulator("NaiveCudaMpiSnp", []()
+                      { return createNaiveCudaMpiSnpSort(); }, Suites::Small);
+    RegisterSimulator("NaiveCudaMpiSnp", []()
+                      { return createNaiveCudaMpiSnpSort(); }, Suites::Medium);
 
-    // 5. CUDA/MPI
-    RegisterSimulator("CudaMpiSnp", createCudaMpiSnpSort, Suites::Small);
-    RegisterSimulator("CudaMpiSnp", createCudaMpiSnpSort, Suites::Medium);
+    // 5. CUDA/MPI (Linear - Default)
+    RegisterSimulator("CudaMpiSnp", []()
+                      { return createCudaMpiSnpSort(PartitionerType::LINEAR); }, Suites::Tiny);
+    RegisterSimulator("CudaMpiSnp", []()
+                      { return createCudaMpiSnpSort(PartitionerType::LINEAR); }, Suites::Small);
+    RegisterSimulator("CudaMpiSnp", []()
+                      { return createCudaMpiSnpSort(PartitionerType::LINEAR); }, Suites::Medium);
 
+    // 5b. CUDA/MPI (Louvain)
+    RegisterSimulator("CudaMpiSnp_Louvain", []()
+                      { return createCudaMpiSnpSort(PartitionerType::LOUVAIN); }, Suites::Tiny);
+    RegisterSimulator("CudaMpiSnp_Louvain", []()
+                      { return createCudaMpiSnpSort(PartitionerType::LOUVAIN); }, Suites::Small);
+    RegisterSimulator("CudaMpiSnp_Louvain", []()
+                      { return createCudaMpiSnpSort(PartitionerType::LOUVAIN); }, Suites::Medium);
+
+    // 5c. CUDA/MPI (Red-Blue)
+    RegisterSimulator("CudaMpiSnp_RedBlue", []()
+                      { return createCudaMpiSnpSort(PartitionerType::RED_BLUE_BFS); }, Suites::Small);
+    RegisterSimulator("CudaMpiSnp_RedBlue", []()
+                      { return createCudaMpiSnpSort(PartitionerType::RED_BLUE_BFS); }, Suites::Medium);
 
     // --- EXECUTION PHASE ---
     if (rank == 0) {

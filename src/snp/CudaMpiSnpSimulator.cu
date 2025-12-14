@@ -397,12 +397,20 @@ public:
             partitioner = std::make_unique<LinearPartitioner>();
         }
 
+        std::vector<int> partition;
         if (mpi_rank == 0)
         {
             std::cout << "Partitioning system using: " << IPartitioner::getPartitionerName(partitioner->getType()) << std::endl;
+            partition = partitioner->partition(original_config, mpi_size);
         }
 
-        auto partition = partitioner->partition(original_config, mpi_size);
+        // Broadcast partition to all ranks to ensure consistency
+        int n_neurons = original_config.neurons.size();
+        if (mpi_rank != 0)
+        {
+            partition.resize(n_neurons);
+        }
+        MPI_Bcast(partition.data(), n_neurons, MPI_INT, 0, MPI_COMM_WORLD);
         auto perm_result = SnpSystemPermuter::permute(original_config, partition, mpi_size);
         
         // Store mapping for output
@@ -819,6 +827,25 @@ void prepareRules(const SnpSystemConfig& config) {
     }
 };
 
-std::unique_ptr<ISnpSimulator> createCudaMpiSimulator() {
-    return std::make_unique<CudaMpiSnpSimulator>();
+std::unique_ptr<ISnpSimulator> createCudaMpiSimulator(PartitionerType partitionerType)
+{
+    auto sim = std::make_unique<CudaMpiSnpSimulator>();
+    std::unique_ptr<IPartitioner> partitioner;
+    switch (partitionerType)
+    {
+    case PartitionerType::LINEAR:
+        partitioner = std::make_unique<LinearPartitioner>();
+        break;
+    case PartitionerType::LOUVAIN:
+        partitioner = std::make_unique<LouvainPartitioner>();
+        break;
+    case PartitionerType::RED_BLUE_BFS:
+        partitioner = std::make_unique<RedBluePartitioner>();
+        break;
+    default:
+        partitioner = std::make_unique<LinearPartitioner>();
+        break;
+    }
+    sim->setPartitioner(std::move(partitioner));
+    return sim;
 }

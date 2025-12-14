@@ -38,6 +38,9 @@ public:
 
     /**
      * @brief Helper to get string representation of partitioner type.
+     *
+     * @param PartitionerType The type of partitioner to use.
+     */
     static std::string getPartitionerName(PartitionerType type) {
         switch (type) {
             case PartitionerType::LINEAR: return "Linear (Block) Partitioning";
@@ -46,6 +49,5 @@ public:
             case PartitionerType::CUSTOM: return "Custom";
             default: return "Unknown";
         }
-    }
     }
 };
