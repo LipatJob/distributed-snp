@@ -546,6 +546,11 @@ private:
     void executeOneStep() {
         auto kernel_start = std::chrono::high_resolution_clock::now();
         
+        if (neuron_grid_size == 0) {
+             std::cerr << "Error: neuron_grid_size is 0. num_neurons=" << num_neurons << std::endl;
+             return;
+        }
+
         // Phase 1: Update neuron status (delay timers, open/closed)
         updateNeuronStatusKernel<<<neuron_grid_size, BLOCK_SIZE>>>(d_neurons);
         CUDA_CHECK(cudaGetLastError());

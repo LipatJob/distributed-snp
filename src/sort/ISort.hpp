@@ -1,5 +1,6 @@
 #include <memory>
 #include <vector>
+#include "../snp/IPartitioner.hpp"
 
 /**
  * @brief Interface for sorting integer arrays
@@ -65,5 +66,5 @@ public:
 std::unique_ptr<ISort> createNaiveCpuSnpSort();
 std::unique_ptr<ISort> createCudaSnpSort();
 std::unique_ptr<ISort> createSparseCudaSnpSort();
-std::unique_ptr<ISort> createNaiveCudaMpiSnpSort();
-std::unique_ptr<ISort> createCudaMpiSnpSort();
+std::unique_ptr<ISort> createNaiveCudaMpiSnpSort(PartitionerType pType = PartitionerType::LINEAR);
+std::unique_ptr<ISort> createCudaMpiSnpSort(PartitionerType pType = PartitionerType::LINEAR);

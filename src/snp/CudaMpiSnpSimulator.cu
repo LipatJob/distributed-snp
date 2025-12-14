@@ -1,5 +1,10 @@
 #include "ISnpSimulator.hpp"
 #include "SnpSystemConfig.hpp"
+#include "IPartitioner.hpp"
+#include "LinearPartitioner.hpp"
+#include "LouvainPartitioner.hpp"
+#include "RedBluePartitioner.hpp"
+#include "SnpSystemPermuter.hpp"
 #include <mpi.h>
 #include <cuda_runtime.h>
 #include <vector>
@@ -324,6 +329,9 @@ private:
     int local_start_idx;
     int local_end_idx;
     int local_num_neurons;
+    std::vector<int> new_to_old_map;
+    std::vector<int> rank_start_indices;
+    std::vector<int> rank_counts;
 
     // Device Data
     DeviceNeuronData d_neurons;
@@ -356,10 +364,20 @@ private:
     double comm_time = 0.0;
     int steps = 0;
 
+    std::unique_ptr<IPartitioner> partitioner;
+
 public:
     CudaMpiSnpSimulator() {
         MPI_Comm_rank(MPI_COMM_WORLD, &mpi_rank);
         MPI_Comm_size(MPI_COMM_WORLD, &mpi_size);
+        // Default to Linear (Naive) Partitioning
+        partitioner = std::make_unique<LinearPartitioner>();
+    }
+
+    // Allow switching partitioner strategy
+    void setPartitioner(std::unique_ptr<IPartitioner> p)
+    {
+        partitioner = std::move(p);
     }
 
     ~CudaMpiSnpSimulator() {
@@ -372,20 +390,40 @@ public:
         if (d_import_buffer) cudaFree(d_import_buffer);
     }
 
-    bool loadSystem(const SnpSystemConfig& config) override {
+    bool loadSystem(const SnpSystemConfig& original_config) override {
+        // 1. Partition & Permute
+        if (!partitioner)
+        {
+            partitioner = std::make_unique<LinearPartitioner>();
+        }
+
+        std::vector<int> partition;
+        if (mpi_rank == 0)
+        {
+            partition = partitioner->partition(original_config, mpi_size);
+        }
+
+        // Broadcast partition to all ranks to ensure consistency
+        int n_neurons = original_config.neurons.size();
+        if (mpi_rank != 0)
+        {
+            partition.resize(n_neurons);
+        }
+        MPI_Bcast(partition.data(), n_neurons, MPI_INT, 0, MPI_COMM_WORLD);
+        auto perm_result = SnpSystemPermuter::permute(original_config, partition, mpi_size);
+        
+        // Store mapping for output
+        new_to_old_map = perm_result.new_to_old;
+        rank_start_indices = perm_result.partition_offsets;
+        rank_counts = perm_result.partition_counts;
+        
+        // Use the new config
+        const SnpSystemConfig& config = perm_result.config;
         global_num_neurons = config.neurons.size();
 
-        // 1. Calculate Partitioning (Block Distribution)
-        int base = global_num_neurons / mpi_size;
-        int rem = global_num_neurons % mpi_size;
-        
-        if (mpi_rank < rem) {
-            local_num_neurons = base + 1;
-            local_start_idx = mpi_rank * local_num_neurons;
-        } else {
-            local_num_neurons = base;
-            local_start_idx = rem * (base + 1) + (mpi_rank - rem) * base;
-        }
+        // 2. Set Local Range from Permutation Result
+        local_start_idx = rank_start_indices[mpi_rank];
+        local_num_neurons = rank_counts[mpi_rank];
         local_end_idx = local_start_idx + local_num_neurons;
 
         // 2. Prepare Local Neurons
@@ -557,6 +595,15 @@ public:
         MPI_Allgatherv(local_state.data(), local_n, MPI_INT, 
                        global_state.data(), recv_counts.data(), displs.data(), MPI_INT, MPI_COMM_WORLD);
 
+        // 5. Restore Original Order
+        if (!new_to_old_map.empty()) {
+            std::vector<int> original_order_state(total_neurons);
+            for(int i=0; i<total_neurons; ++i) {
+                original_order_state[new_to_old_map[i]] = global_state[i];
+            }
+            return original_order_state;
+        }
+
         return global_state;
     }
 
@@ -627,12 +674,8 @@ void prepareRules(const SnpSystemConfig& config) {
     void prepareTopology(const SnpSystemConfig& config) {
         // --- 1. Identify Ranges for all ranks ---
         std::vector<std::pair<int, int>> rank_ranges(mpi_size);
-        int base = global_num_neurons / mpi_size;
-        int rem = global_num_neurons % mpi_size;
         for (int r = 0; r < mpi_size; ++r) {
-            int n = (r < rem) ? base + 1 : base;
-            int start = (r < rem) ? r * n : rem * (base + 1) + (r - rem) * base;
-            rank_ranges[r] = {start, start + n};
+            rank_ranges[r] = {rank_start_indices[r], rank_start_indices[r] + rank_counts[r]};
         }
 
         // --- 2. Classify Synapses ---
@@ -783,6 +826,25 @@ void prepareRules(const SnpSystemConfig& config) {
     }
 };
 
-std::unique_ptr<ISnpSimulator> createCudaMpiSimulator() {
-    return std::make_unique<CudaMpiSnpSimulator>();
+std::unique_ptr<ISnpSimulator> createCudaMpiSimulator(PartitionerType partitionerType)
+{
+    auto sim = std::make_unique<CudaMpiSnpSimulator>();
+    std::unique_ptr<IPartitioner> partitioner;
+    switch (partitionerType)
+    {
+    case PartitionerType::LINEAR:
+        partitioner = std::make_unique<LinearPartitioner>();
+        break;
+    case PartitionerType::LOUVAIN:
+        partitioner = std::make_unique<LouvainPartitioner>();
+        break;
+    case PartitionerType::RED_BLUE_BFS:
+        partitioner = std::make_unique<RedBluePartitioner>();
+        break;
+    default:
+        partitioner = std::make_unique<LinearPartitioner>();
+        break;
+    }
+    sim->setPartitioner(std::move(partitioner));
+    return sim;
 }

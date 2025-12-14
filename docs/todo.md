@@ -10,9 +10,9 @@ Job
 [ ] Try to optimize Optimized CUDA MPI
 
 Jarred
-[ ] 1 Pager
-[ ] Add tests
-[ ] Optimized neuron assignment
+[x] 1 Pager
+[x] Add tests
+[x] Optimized neuron assignment
 
 Deadline of Optimizations: December 14
 Start of Paper/Presentation: December 15
