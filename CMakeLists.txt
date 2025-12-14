@@ -130,6 +130,11 @@ if(BUILD_TESTS)
     target_link_libraries(test_sort PRIVATE snp_sort snp_system GTest::gtest GTest::gtest_main MPI::MPI_CXX)
     add_mpi_test(SnpSortTest test_sort)
 
+    # Partitioner
+    add_executable(test_partitioner tests/snp/PartitionerTest.cpp)
+    target_link_libraries(test_partitioner PRIVATE snp_system GTest::gtest GTest::gtest_main MPI::MPI_CXX)
+    add_mpi_test(PartitionerTest test_partitioner)
+    
     # --- Benchmarks ---
     add_executable(sort_benchmark benchmark/SortBenchmark.cpp)
     target_link_libraries(sort_benchmark PRIVATE snp_sort snp_system benchmark::benchmark benchmark::benchmark_main MPI::MPI_CXX)

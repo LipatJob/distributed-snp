@@ -20,8 +20,12 @@
 std::unique_ptr<ISort> createNaiveCpuSnpSort();
 std::unique_ptr<ISort> createCudaSnpSort();
 std::unique_ptr<ISort> createSparseCudaSnpSort();
-std::unique_ptr<ISort> createNaiveCudaMpiSnpSort();
-std::unique_ptr<ISort> createCudaMpiSnpSort();
+std::unique_ptr<ISort> createPartitionedNaiveCudaMpiSnpSort(){
+    return createNaiveCudaMpiSnpSort(PartitionerType::LINEAR);
+}
+std::unique_ptr<ISort> createParitionedCudaMpiSnpSort(){
+    return createCudaMpiSnpSort(PartitionerType::LINEAR);
+}
 
 // Type alias for cleaner code
 using SorterFactory = std::function<std::unique_ptr<ISort>()>;
@@ -187,7 +191,7 @@ int main(int argc, char** argv) {
     if (targetImpl.empty() || targetImpl == "naive-cuda-mpi" || targetImpl == "mpi" || targetImpl == "all") {
         profileConfigs.push_back({
             "NaiveCudaMpiSnp",
-            createNaiveCudaMpiSnpSort,
+            createPartitionedNaiveCudaMpiSnpSort,
             MEDIUM_SIZE,
             MEDIUM_MAX,
             true  // Requires MPI
@@ -198,7 +202,7 @@ int main(int argc, char** argv) {
     if (targetImpl.empty() || targetImpl == "cuda-mpi" || targetImpl == "mpi" || targetImpl == "all") {
         profileConfigs.push_back({
             "CudaMpiSnp",
-            createCudaMpiSnpSort,
+            createParitionedCudaMpiSnpSort,
             MEDIUM_SIZE,
             MEDIUM_MAX,
             true  // Requires MPI
