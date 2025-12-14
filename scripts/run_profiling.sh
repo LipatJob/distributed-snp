@@ -191,7 +191,7 @@ run_profiling_nsys() {
     # Build nsys command
     # We use nsys profile to capture CPU, CUDA, and MPI activity
     local nsys_trace="cuda,mpi,nvtx,osrt"
-    local nsys_cmd="/usr/local/cuda/bin/nsys profile --trace=$nsys_trace --output=$output_file --force-overwrite=true --stats=true"
+    local nsys_cmd="/usr/local/cuda/bin/nsys profile --capture-range=cudaProfilerApi --trace=$nsys_trace --output=$output_file --force-overwrite=true --stats=true"
     
     # Add custom options if provided
     if [ -n "$NSYS_OPTS" ]; then
