@@ -1,0 +1,116 @@
+\documentclass[11pt, a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage{amsmath}
+\usepackage{amsfonts}
+\usepackage{amssymb}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage{listings}
+\usepackage{color}
+\usepackage{geometry}
+\usepackage{cite}
+
+\geometry{margin=1in}
+
+\title{High-Performance Distributed Simulation of Spiking Neural P Systems: A Case Study on Natural Number Sorting}
+\author{Distributed SNP Project Team}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+Spiking Neural P (SNP) Systems are bio-inspired parallel computing models that abstract the neurophysiological behavior of neurons. While theoretically powerful, simulating large-scale SNP systems poses significant computational challenges. This paper presents a high-performance, distributed simulation framework leveraging a hybrid MPI+CUDA architecture to address these scalability issues. We implement a matrix-based simulation engine that offloads intensive computations to GPUs while managing global state across distributed nodes via MPI. To optimize inter-node communication, we employ advanced graph partitioning strategies, including Louvain and Red-Blue Pebbling algorithms. We demonstrate the efficacy and limitations of this framework through a case study on natural number sorting, analyzing the trade-offs between parallel execution speedup and network communication overhead. Our results highlight the potential of heterogeneous computing environments for simulating complex membrane computing models.
+\end{abstract}
+
+\section{Introduction}
+
+Membrane Computing, introduced by Gheorghe Păun in 1998, initiated a new branch of natural computing inspired by the structure and functioning of living cells. Spiking Neural P (SNP) Systems, introduced in 2006 \cite{ionescu2006}, draw inspiration from the way neurons communicate via electrical impulses, or ``spikes,'' across synapses.
+
+SNP Systems abstract complex neurobiological processes into a formal computing model consisting of neurons placed in the nodes of a directed graph. Unlike traditional neural networks, SNP systems are discrete, relying on the timing and number of spikes to encode information. Simulating these systems at scale is computationally expensive due to the massive parallelism inherent in the model. This paper presents ``Distributed SNP'', a high-performance simulation framework designed to address these challenges using a hybrid MPI+CUDA architecture.
+
+\section{System Architecture}
+
+The project adopts a modular architecture to decouple the simulation logic from the underlying hardware acceleration. The core design relies on two primary interfaces:
+\begin{itemize}
+    \item \texttt{ISnpSimulator}: Defines the high-level operations for SNP systems, such as loading configurations, stepping through simulation time, and retrieving global state.
+    \item \texttt{IMatrixOps}: Abstracts the linear algebra operations (multiplication, addition, Hadamard product). This abstraction allows for interchangeable backends, including a naive CPU implementation, a single-GPU CUDA implementation, and a distributed MPI+CUDA implementation.
+\end{itemize}
+This separation of concerns allows researchers to prototype models on a standard workstation and seamlessly scale to a GPU cluster without altering the core simulation logic.
+
+\section{Implementation Details}
+
+\subsection{Matrix Representation}
+The state of the system at time $t$ is represented by a configuration vector $C_t = [c_1, c_2, \dots, c_m]$, where $c_i$ is the number of spikes in neuron $i$. The evolution of the system is modeled algebraically:
+\begin{equation}
+    C(k+1) = C(k) - S(k) \cdot C_{cons} + S(k) \cdot P \cdot M_{syn}
+\end{equation}
+where $S(k)$ is the spiking vector determined by the firing rules, $C_{cons}$ is the consumption matrix, $P$ is the production matrix, and $M_{syn}$ is the adjacency matrix. This formulation maps directly to sparse matrix-vector multiplication (SpMV) kernels, which are highly optimized on GPUs \cite{zeng2010, martinez2021}.
+
+\subsection{Hybrid MPI+CUDA Backend}
+To support large-scale simulations, we employ a hybrid architecture:
+\begin{itemize}
+    \item \textbf{Intra-node Acceleration (CUDA)}: Within each computing node, NVIDIA GPUs handle the intensive matrix operations. To maximize memory bandwidth, we utilize a Structure of Arrays (SoA) data layout. Instead of storing neuron objects, we store separate arrays for configuration, delay timers, and spike production. This ensures memory coalescing when threads access consecutive neuron data.
+    \item \textbf{Inter-node Communication (MPI)}: The global system state is partitioned across nodes. At each time step, nodes exchange the spiking activity of boundary neurons using MPI. This synchronization ensures the global consistency of the simulation.
+\end{itemize}
+
+\subsection{Graph Partitioning}
+Minimizing inter-node communication is critical for performance. We implement three partitioning strategies:
+\begin{itemize}
+    \item \textbf{Linear Partitioning}: Assigns neurons to partitions based on sequential indices. Effective for regular, grid-like topologies.
+    \item \textbf{Louvain Method}: A heuristic algorithm that optimizes modularity, grouping densely connected clusters of neurons together.
+    \item \textbf{Red-Blue Pebbling}: Inspired by the pebble game for memory hierarchies, this strategy uses a BFS-based wavefront expansion to create partitions with minimal boundary surface area, directly reducing the number of synapses crossing partition boundaries.
+\end{itemize}
+
+\section{Case Study: Natural Number Sorting}
+
+To validate the framework, we implemented a sorting algorithm using SNP systems. The topology consists of three layers:
+\begin{enumerate}
+    \item \textbf{Input Layer}: $N$ neurons initialized with spike counts representing the numbers to sort. They act as pulse generators.
+    \item \textbf{Sorter Layer}: $N$ neurons, where the $s$-th neuron is configured to fire only upon receiving exactly $N-s$ spikes. This is achieved via a priority rule set: ``Forget High'' (consume if $> N-s$), ``Fire Exact'' (produce if $= N-s$), and ``Forget Low'' (consume if $< N-s$).
+    \item \textbf{Output Layer}: Accumulates the sorted sequence based on the temporal firing order of the sorter layer.
+\end{enumerate}
+This application demonstrates the system's capability to transform spatial data (magnitude) into temporal data (latency).
+
+\section{Performance Evaluation}
+
+\subsection{Complexity and Scalability}
+Benchmarks on the CPU backend reveal that sorting time scales as $O(M \cdot N^2)$, where $M$ is the maximum input value and $N$ is the number of neurons. Sorting 1000 integers takes significantly longer than 100 due to the linear dependence on $M$ (simulation steps) and quadratic dependence on $N$ (matrix size).
+
+\subsection{Communication Overhead}
+While the distributed backend enables larger $N$, it introduces network latency. The synchronization of the spiking vector $S(k)$ at every step means that for small $N$ or poorly partitioned graphs, the MPI overhead can dominate the computation time. The Red-Blue Pebbling partitioner proves effective in mitigating this by minimizing the cut size between partitions.
+
+\section{Conclusion}
+Spiking Neural P Systems offer a versatile and powerful model for parallel computing. The transition from theoretical constructs to practical, high-performance simulations via matrix representation has opened new avenues for research. By leveraging sparse matrix operations and distributed computing architectures, we can now simulate systems of unprecedented scale, bringing us closer to understanding complex emergent behaviors in both biological and artificial spiking networks.
+
+\begin{thebibliography}{9}
+
+\bibitem{ionescu2006}
+Ionescu, M., Păun, G., \& Yokomori, T. (2006).
+\textit{Spiking Neural P Systems}.
+Fundamenta Informaticae, 71(2-3), 279-308.
+
+\bibitem{ionescu2008}
+Ionescu, M., \& Sburlan, D. (2008).
+\textit{Some Applications of Spiking Neural P Systems}.
+Comput. Inform., 27, 515–528.
+
+\bibitem{zeng2010}
+Zeng, X., Adorna, H., Martínez-del-Amor, M.A., Pan, L., \& Pérez-Jiménez, M.J. (2010).
+\textit{Matrix Representation of Spiking Neural P Systems}.
+In Proceedings of the 11th International Conference on Membrane Computing, Jena, Germany, 24–27 August 2010; Volume 6501, pp. 377–391.
+
+\bibitem{martinez2017}
+Martínez-del-Amor, M.Á., Orellana-Martín, D., Cabarle, F.G.C., Pérez-Jiménez, M.J., \& Adorna, H.N. (2017).
+\textit{Sparse-matrix representation of spiking neural P systems for GPUs}.
+In Proceedings of the 15th Brainstorming Week on Membrane Computing, Sevilla, Spain, 31 January–5 February 2017; pp. 161–170.
+
+\bibitem{martinez2021}
+Martínez-del-Amor, M.Á., Orellana-Martín, D., Pérez-Hurtado, I., Cabarle, F.G.C., \& Adorna, H.N. (2021).
+\textit{Simulation of Spiking Neural P Systems with Sparse Matrix-Vector Operations}.
+Processes, 9, 690. https://doi.org/10.3390/pr9040690.
+
+\end{thebibliography}
+
+\end{document}
