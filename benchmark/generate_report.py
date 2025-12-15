@@ -344,7 +344,7 @@ def main():
             pass
     
     # Create output directory structure
-    results_dir = json_path.parent / timestamp
+    results_dir = json_path.parent
     viz_dir = results_dir / "viz"
     viz_dir.mkdir(parents=True, exist_ok=True)
     
@@ -356,12 +356,6 @@ def main():
     df, context = load_benchmark_data(json_path)
     print(f"  Found {len(df)} benchmark results")
     print(f"  Implementations: {sorted(df['Implementation'].unique())}")
-    
-    # Copy JSON to new location
-    import shutil
-    data_json_path = results_dir / "data.json"
-    shutil.copy(json_path, data_json_path)
-    print(f"✓ Saved raw data: {data_json_path}")
     
     # Generate table
     print("Generating tabular report...")
