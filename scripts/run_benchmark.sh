@@ -36,22 +36,6 @@ while [[ $# -gt 0 ]]; do
             FILTER="$2"
             shift 2
             ;;
-        --hostfile)
-            HOSTFILE="$2"
-            shift 2
-            ;;
-        --no-hostfile)
-            USE_HOSTFILE=false
-            shift
-            ;;
-        --json)
-            OUTPUT_FORMAT="json"
-            shift
-            ;;
-        --csv)
-            OUTPUT_FORMAT="csv"
-            shift
-            ;;
         -h|--help)
             echo "Usage: $0 [options]"
             echo ""
@@ -60,8 +44,6 @@ while [[ $# -gt 0 ]]; do
             echo "  -f, --filter REGEX     Run only benchmarks matching REGEX"
             echo "  --hostfile FILE        Path to MPI hostfile (default: ./hostfile.txt)"
             echo "  --no-hostfile          Don't use hostfile, run all on localhost"
-            echo "  --json                 Output results in JSON format"
-            echo "  --csv                  Output results in CSV format"
             echo "  -h, --help             Show this help message"
             echo ""
             echo "Examples:"
@@ -102,17 +84,8 @@ if [ -n "$FILTER" ]; then
     BENCHMARK_CMD="$BENCHMARK_CMD --benchmark_filter=$FILTER"
 fi
 
-case $OUTPUT_FORMAT in
-    json)
-        OUTPUT_FILE="${OUTPUT_DIR}/benchmark_distributed_${TIMESTAMP}.json"
-        BENCHMARK_CMD="$BENCHMARK_CMD --benchmark_format=json --benchmark_out=$OUTPUT_FILE"
-        ;;
-    csv)
-        OUTPUT_FILE="${OUTPUT_DIR}/benchmark_distributed_${TIMESTAMP}.csv"
-        BENCHMARK_CMD="$BENCHMARK_CMD --benchmark_format=csv --benchmark_out=$OUTPUT_FILE"
-        ;;
-esac
-
+OUTPUT_FILE="${OUTPUT_DIR}/benchmark_${TIMESTAMP}.json"
+BENCHMARK_CMD="$BENCHMARK_CMD --benchmark_out_format=json --benchmark_out=$OUTPUT_FILE"
 BENCHMARK_CMD="$BENCHMARK_CMD $BENCHMARK_ARGS"
 
 echo "========================================="
@@ -137,14 +110,6 @@ echo ""
 
 # Build MPI command
 MPI_CMD="mpirun -np $NUM_PROCS --host ${HOSTS} --mca btl_tcp_if_include ens5 --mca oob_tcp_if_include ens5 --allow-run-as-root --oversubscribe"
-
-if [ "$USE_HOSTFILE" = true ]; then
-    # Extract hosts from hostfile
-    HOSTS=$(grep -v '^#' "$HOSTFILE" | grep -v '^$' | awk '{print $1}' | paste -sd, -)
-    if [ -n "$HOSTS" ]; then
-        MPI_CMD="$MPI_CMD --host $HOSTS"
-    fi
-fi
 
 # Run benchmark with MPI
 $MPI_CMD $BENCHMARK_CMD
