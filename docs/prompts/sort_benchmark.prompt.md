@@ -135,3 +135,10 @@ Ensure benchmarks include:
 - CUDA implementations require GPU availability
 - Consider warmup runs to exclude initialization overhead
 - **Feel free to refactor or extend any code to get better measurements** - the goal is comprehensive performance analysis
+
+
+i want you to improve my benchmark such that it visualizes the result after running the benchmark. It should have the following folder structure
+
+benchmark/results/{timestamp}/data.json --> raw result of the benchmark
+benchmark/results/{timestamp}/table.txt --> tabular comparison of the benchmark
+benchmark/results/{timestamp}/viz/ --> folder containing the visualizations

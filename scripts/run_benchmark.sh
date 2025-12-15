@@ -7,8 +7,9 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
-OUTPUT_DIR="${PROJECT_ROOT}/benchmark_results"
+OUTPUT_DIR="${PROJECT_ROOT}/benchmark/results"
 HOSTFILE="${PROJECT_ROOT}/hostfile.txt"
+mkdir -p "$OUTPUT_DIR"
 
 BUILD_DIR="/home/shared/tmp/distributed-snp-new"
 BENCHMARK_EXEC="${BUILD_DIR}/bin/sort_benchmark"
@@ -77,6 +78,10 @@ fi
 # Generate timestamp for output file
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 
+# Create timestamped directory structure
+RESULT_DIR="${OUTPUT_DIR}/${TIMESTAMP}"
+mkdir -p "$RESULT_DIR"
+
 # Build benchmark command
 BENCHMARK_CMD="$BENCHMARK_EXEC"
 
@@ -84,8 +89,9 @@ if [ -n "$FILTER" ]; then
     BENCHMARK_CMD="$BENCHMARK_CMD --benchmark_filter=$FILTER"
 fi
 
-OUTPUT_FILE="${OUTPUT_DIR}/benchmark_${TIMESTAMP}.json"
-BENCHMARK_CMD="$BENCHMARK_CMD --benchmark_out_format=json --benchmark_out=$OUTPUT_FILE"
+# Save to temporary location first (for compatibility)
+DATA_OUTPUT_FILE="${RESULT_DIR}/data.json"
+BENCHMARK_CMD="$BENCHMARK_CMD --benchmark_out_format=json --benchmark_out=$DATA_OUTPUT_FILE"
 BENCHMARK_CMD="$BENCHMARK_CMD $BENCHMARK_ARGS"
 
 echo "========================================="
@@ -102,9 +108,7 @@ echo "Benchmark Exec: $BENCHMARK_EXEC"
 if [ -n "$FILTER" ]; then
     echo "Filter:         $FILTER"
 fi
-if [ "$OUTPUT_FORMAT" != "console" ]; then
-    echo "Output File:    $OUTPUT_FILE"
-fi
+echo "Result Dir:     $RESULT_DIR"
 echo "========================================="
 echo ""
 
@@ -117,7 +121,42 @@ $MPI_CMD $BENCHMARK_CMD
 echo ""
 echo "========================================="
 echo "Distributed Benchmark Complete"
-if [ "$OUTPUT_FORMAT" != "console" ]; then
-    echo "Results saved to: $OUTPUT_FILE"
-fi
 echo "========================================="
+
+# Generate report (only on rank 0)
+if [ -f "$DATA_OUTPUT_FILE" ]; then
+    echo ""
+    echo "Generating visualizations and report..."
+    
+    # Check if Python 3 is available
+    if command -v python3 &> /dev/null; then
+        PYTHON_CMD=python3
+    elif command -v python &> /dev/null; then
+        PYTHON_CMD=python
+    else
+        echo "Warning: Python not found. Skipping report generation."
+        echo "Raw results saved to: $DATA_OUTPUT_FILE"
+        exit 0
+    fi
+    
+    # Run report generation
+    REPORT_SCRIPT="${PROJECT_ROOT}/benchmark/generate_report.py"
+    if [ -f "$REPORT_SCRIPT" ]; then
+        $PYTHON_CMD "$REPORT_SCRIPT" "$DATA_OUTPUT_FILE"
+        
+        echo ""
+        echo "========================================="
+        echo "Report Generated Successfully"
+        echo "========================================="
+        echo "Location: $RESULT_DIR"
+        echo "  - data.json: Raw benchmark data"
+        echo "  - table.txt: Tabular comparison"
+        echo "  - viz/: Visualization plots"
+        echo "========================================="
+    else
+        echo "Warning: Report script not found at $REPORT_SCRIPT"
+        echo "Raw results saved to: $DATA_OUTPUT_FILE"
+    fi
+else
+    echo "Warning: Benchmark output file not found"
+fi
