@@ -1,6 +1,7 @@
 #pragma once
 #include "SnpSystemConfig.hpp"
 #include "IPartitioner.hpp"
+#include "PerformanceMetrics.hpp"
 #include <vector>
 #include <cstdint>
 #include <memory>
@@ -48,8 +49,25 @@ public:
     virtual void reset() = 0;
 
     /**
-     * @brief Returns performance metrics (compute time vs communication time).
-     * useful for identifying bottlenecks.
+     * @brief Returns structured performance metrics.
+     * 
+     * This method provides detailed, machine-readable performance data including:
+     * - Core metrics (steps, timing)
+     * - CUDA-specific metrics (kernel times, memory transfers)
+     * - MPI-specific metrics (communication times, message counts)
+     * - Algorithm-specific metrics (system configuration, partitioning info)
+     * 
+     * @return PerformanceMetrics Structured performance data
+     */
+    virtual PerformanceMetrics getPerformanceMetrics() const = 0;
+
+    /**
+     * @brief Returns performance metrics as a human-readable report.
+     * 
+     * This is a convenience method that formats the structured metrics.
+     * For programmatic access, use getPerformanceMetrics() instead.
+     * 
+     * @return std::string Formatted performance report
      */
     virtual std::string getPerformanceReport() const = 0;
 };

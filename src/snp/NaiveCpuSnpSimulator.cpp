@@ -1,5 +1,6 @@
 #include "ISnpSimulator.hpp"
 #include "SnpSystemConfig.hpp"
+#include "PerformanceMetrics.hpp"
 #include <vector>
 #include <memory>
 #include <sstream>
@@ -106,17 +107,31 @@ public:
         steps_executed = 0;
     }
     
-    std::string getPerformanceReport() const override {
-        std::ostringstream report;
-        report << "=== Naive CPU Simulator Performance Report ===\n";
-        report << "Total Steps: " << steps_executed << "\n";
-        report << "Total Compute Time: " << total_compute_time_ms << " ms\n";
-        if (steps_executed > 0) {
-            report << "Average Time per Step: " 
-                   << (total_compute_time_ms / steps_executed) << " ms\n";
+    PerformanceMetrics getPerformanceMetrics() const override {
+        PerformanceMetrics metrics;
+        
+        // Core metrics
+        metrics.steps_executed = steps_executed;
+        metrics.total_time_ms = total_compute_time_ms;
+        metrics.compute_time_ms = total_compute_time_ms;
+        
+        // Algorithm metrics
+        metrics.algorithm.num_neurons = config.neurons.size();
+        metrics.algorithm.num_synapses = config.synapses.size();
+        
+        // Count total rules
+        int total_rules = 0;
+        for (const auto& neuron : config.neurons) {
+            total_rules += neuron.rules.size();
         }
-        report << "Note: This is a naive implementation without optimization.\n";
-        return report.str();
+        metrics.algorithm.total_rules = total_rules;
+        
+        return metrics;
+    }
+    
+    std::string getPerformanceReport() const override {
+        PerformanceMetrics metrics = getPerformanceMetrics();
+        return metrics.toReport("Naive CPU Simulator");
     }
     
 private:

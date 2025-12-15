@@ -2,6 +2,7 @@
 #include "../src/snp/ISnpSimulator.hpp"
 #include "../src/snp/SnpSystemConfig.hpp"
 #include "../src/snp/IPartitioner.hpp"
+#include "../src/snp/PerformanceMetrics.hpp"
 #include <benchmark/benchmark.h>
 #include <mpi.h>
 #include <algorithm>
@@ -101,15 +102,6 @@ namespace BenchUtils {
     bool IsSorted(const std::vector<int>& data) {
         return std::is_sorted(data.begin(), data.end());
     }
-    
-    // Helper to parse metrics
-    double ExtractMetric(const std::string& report, const std::string& key) {
-        size_t pos = report.find(key);
-        if (pos == std::string::npos) return 0.0;
-        size_t numStart = report.find_first_of("0123456789.", pos);
-        if (numStart == std::string::npos) return 0.0;
-        return std::stod(report.substr(numStart));
-    }
 }
 
 // ============================================================================
@@ -154,12 +146,57 @@ public:
                 state.SkipWithError("Output is not sorted!");
             }
 
-            // 6. Report Metrics
-            std::string report = sorter->getPerformanceReport();
-            double commTime = BenchUtils::ExtractMetric(report, "Comm Time");
+            // 6. Extract Structured Metrics
+            PerformanceMetrics metrics = sorter->getPerformanceMetrics();
             
-            if (rank == 0 && commTime > 0.0) {
-                state.counters["Comm_ms"] = benchmark::Counter(commTime, benchmark::Counter::kAvgIterations);
+            if (rank == 0) {
+                // Report detailed metrics as custom counters
+                if (metrics.mpi.has_data()) {
+                    state.counters["MPI_Comm_ms"] = benchmark::Counter(
+                        metrics.mpi.communication_time_ms, 
+                        benchmark::Counter::kAvgIterations
+                    );
+                    state.counters["MPI_Messages"] = benchmark::Counter(
+                        metrics.mpi.total_messages_sent, 
+                        benchmark::Counter::kAvgIterations
+                    );
+                    state.counters["MPI_Bytes"] = benchmark::Counter(
+                        metrics.mpi.total_bytes_sent, 
+                        benchmark::Counter::kAvgIterations
+                    );
+                    state.counters["Comm_Pct"] = benchmark::Counter(
+                        metrics.communication_percentage(),
+                        benchmark::Counter::kAvgIterations
+                    );
+                }
+                
+                if (metrics.cuda.has_data()) {
+                    state.counters["CUDA_Kernel_ms"] = benchmark::Counter(
+                        metrics.cuda.kernel_time_ms,
+                        benchmark::Counter::kAvgIterations
+                    );
+                    state.counters["CUDA_Memory_ms"] = benchmark::Counter(
+                        metrics.cuda.memory_transfer_time_ms,
+                        benchmark::Counter::kAvgIterations
+                    );
+                    state.counters["CUDA_Mem_MB"] = benchmark::Counter(
+                        metrics.cuda.device_memory_allocated / (1024.0 * 1024.0),
+                        benchmark::Counter::kAvgIterations
+                    );
+                }
+                
+                state.counters["Compute_ms"] = benchmark::Counter(
+                    metrics.compute_time_ms,
+                    benchmark::Counter::kAvgIterations
+                );
+                state.counters["Steps"] = benchmark::Counter(
+                    metrics.steps_executed,
+                    benchmark::Counter::kAvgIterations
+                );
+                state.counters["Throughput_steps/s"] = benchmark::Counter(
+                    metrics.throughput_steps_per_second(),
+                    benchmark::Counter::kAvgIterations
+                );
             }
             
             // Cleanup

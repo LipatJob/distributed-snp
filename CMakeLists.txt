@@ -139,6 +139,9 @@ if(BUILD_TESTS)
     add_executable(sort_benchmark benchmark/SortBenchmark.cpp)
     target_link_libraries(sort_benchmark PRIVATE snp_sort snp_system benchmark::benchmark benchmark::benchmark_main MPI::MPI_CXX)
 
+    # --- Microbenchmark Tool ---
+    add_executable(microbenchmark src/microbenchmark.cpp)
+    target_link_libraries(microbenchmark PRIVATE snp_sort snp_system MPI::MPI_CXX)
 endif()
 
 # ============================================================================

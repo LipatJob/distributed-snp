@@ -117,3 +117,10 @@ benchmark-viz: build ## Run benchmarks and visualize
 profile: distribute ## Profile implementations
 	@echo "$(GREEN)Profiling...$(NC)"
 	@./scripts/run_profiling.sh $(ARGS)
+
+run-distributed:
+	@mpirun -np 2 --host localhost,10.0.0.2 --mca btl_tcp_if_include ens5 --mca oob_tcp_if_include ens5 $(ARGS)
+
+microbenchmark: distribute ## Run microbenchmark tool (use: make microbenchmark -- -n 1000 -i cuda)
+	@echo "$(GREEN)Running microbenchmark...$(NC)"
+	$(MAKE) run-distributed ARGS="$(REMOTE_DIR)/bin/microbenchmark $(ARGS)"

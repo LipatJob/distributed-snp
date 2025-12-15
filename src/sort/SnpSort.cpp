@@ -90,6 +90,13 @@ public:
         }
     }
 
+    PerformanceMetrics getPerformanceMetrics() const override {
+        if (!simulator) {
+            return PerformanceMetrics();  // Return empty metrics
+        }
+        return simulator->getPerformanceMetrics();
+    }
+
     std::string getPerformanceReport() const override {
         if (!simulator) {
             return "No simulator available";

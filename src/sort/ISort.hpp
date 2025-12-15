@@ -1,6 +1,7 @@
 #include <memory>
 #include <vector>
 #include "../snp/IPartitioner.hpp"
+#include "../snp/PerformanceMetrics.hpp"
 
 /**
  * @brief Interface for sorting integer arrays
@@ -53,7 +54,17 @@ public:
     }
 
     /**
-     * @brief Get performance metrics from the underlying implementation
+     * @brief Get structured performance metrics from the underlying implementation
+     * 
+     * For SNP-based implementations, this returns detailed metrics including
+     * communication time, compute time, CUDA kernel times, MPI message counts, etc.
+     * 
+     * @return PerformanceMetrics Structured performance data
+     */
+    virtual PerformanceMetrics getPerformanceMetrics() const = 0;
+
+    /**
+     * @brief Get performance metrics as a human-readable report
      * 
      * For SNP-based implementations, this returns metrics like communication
      * time and compute time from the simulator.

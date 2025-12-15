@@ -1,5 +1,6 @@
 #include "ISnpSimulator.hpp"
 #include "SnpSystemConfig.hpp"
+#include "PerformanceMetrics.hpp"
 #include "IPartitioner.hpp"
 #include "LinearPartitioner.hpp"
 #include "LouvainPartitioner.hpp"
@@ -488,6 +489,27 @@ public:
         mpi_time_ms = 0;
     }
 
+    PerformanceMetrics getPerformanceMetrics() const override {
+        PerformanceMetrics metrics;
+        
+        // Core metrics
+        metrics.steps_executed = 0; // This would need to be tracked
+        metrics.total_time_ms = compute_time_ms + mpi_time_ms;
+        metrics.compute_time_ms = compute_time_ms;
+        
+        // MPI metrics
+        metrics.mpi.communication_time_ms = mpi_time_ms;
+        metrics.mpi.rank = mpi_rank;
+        metrics.mpi.world_size = mpi_size;
+        
+        // Algorithm metrics
+        metrics.algorithm.num_neurons = global_num_neurons;
+        metrics.algorithm.local_neurons = my_neuron_count;
+        metrics.algorithm.partitioner_type = "Naive CUDA+MPI";
+        
+        return metrics;
+    }
+
     std::string getPerformanceReport() const override {
         // Collect avg times across ranks
         double avg_compute, avg_mpi;
@@ -498,12 +520,19 @@ public:
             avg_compute /= mpi_size;
             avg_mpi /= mpi_size;
             
+            PerformanceMetrics metrics;
+            metrics.total_time_ms = avg_compute + avg_mpi;
+            metrics.compute_time_ms = avg_compute;
+            metrics.mpi.communication_time_ms = avg_mpi;
+            metrics.mpi.world_size = mpi_size;
+            metrics.algorithm.num_neurons = global_num_neurons;
+            metrics.algorithm.partitioner_type = "Naive CUDA+MPI";
+            
             std::ostringstream ss;
-            ss << "=== Naive CUDA+MPI Hybrid Simulator Report ===\n";
-            ss << "Nodes: " << mpi_size << "\n";
-            ss << "Avg Compute Time (CUDA): " << avg_compute << " ms\n";
-            ss << "Avg Comm Time (MPI):    " << avg_mpi << " ms\n";
-            ss << "Ratio (Comm/Comp):      " << (avg_mpi / (avg_compute + 1e-9)) << "\n";
+            ss << metrics.toReport("Naive CUDA+MPI Hybrid Simulator");
+            ss << "\n[Distribution]\n";
+            ss << "  Compute/Communication Ratio: " 
+               << (avg_compute / (avg_mpi + 1e-9)) << "\n";
             return ss.str();
         }
         return "";

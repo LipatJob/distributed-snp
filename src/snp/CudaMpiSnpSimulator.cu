@@ -1,5 +1,6 @@
 #include "ISnpSimulator.hpp"
 #include "SnpSystemConfig.hpp"
+#include "PerformanceMetrics.hpp"
 #include "IPartitioner.hpp"
 #include "LinearPartitioner.hpp"
 #include "LouvainPartitioner.hpp"
@@ -618,13 +619,81 @@ public:
         steps = 0;
     }
 
+    PerformanceMetrics getPerformanceMetrics() const override {
+        PerformanceMetrics metrics;
+        
+        // Core metrics
+        metrics.steps_executed = steps;
+        metrics.total_time_ms = compute_time + comm_time;
+        metrics.compute_time_ms = compute_time;
+        
+        // CUDA metrics
+        metrics.cuda.kernel_time_ms = compute_time; // Most of compute is kernel time
+        
+        // MPI metrics with detailed communication data
+        metrics.mpi.communication_time_ms = comm_time;
+        metrics.mpi.rank = mpi_rank;
+        metrics.mpi.world_size = mpi_size;
+        
+        // Calculate message statistics
+        for (size_t rank = 0; rank < comm_map.size(); rank++) {
+            const auto& comm = comm_map[rank];
+            if (comm.export_count > 0) {
+                metrics.mpi.total_messages_sent += 1; // One message per rank per step
+                metrics.mpi.total_bytes_sent += comm.export_count * sizeof(int) * steps;
+                metrics.mpi.messages_per_rank[rank] = steps;
+                metrics.mpi.bytes_per_rank[rank] = comm.export_count * sizeof(int) * steps;
+            }
+            if (comm.import_count > 0) {
+                metrics.mpi.total_messages_received += 1;
+                metrics.mpi.total_bytes_received += comm.import_count * sizeof(int) * steps;
+            }
+        }
+        
+        // Algorithm metrics
+        metrics.algorithm.num_neurons = global_num_neurons;
+        metrics.algorithm.local_neurons = local_num_neurons;
+        
+        // Determine partitioner name
+        if (partitioner) {
+            // You could add a method to IPartitioner to get its name
+            metrics.algorithm.partitioner_type = "CUDA+MPI";
+        }
+        
+        // Count cross-rank synapses
+        int cross_rank = 0;
+        for (const auto& comm : comm_map) {
+            cross_rank += comm.export_count;
+        }
+        metrics.algorithm.cross_rank_synapses = cross_rank;
+        
+        return metrics;
+    }
+
     std::string getPerformanceReport() const override {
+        PerformanceMetrics metrics = getPerformanceMetrics();
+        
         std::ostringstream ss;
-        ss << "=== MPI+CUDA Rank " << mpi_rank << " Report ===\n";
-        ss << "Neurons Owned: " << local_num_neurons << "\n";
-        ss << "Compute Time: " << compute_time << " ms\n";
-        ss << "Comm Time:    " << comm_time << " ms\n";
-        ss << "Total Steps:  " << steps << "\n";
+        ss << metrics.toReport("MPI+CUDA Distributed Simulator");
+        
+        // Add rank-specific details
+        ss << "\n[Rank " << mpi_rank << " Details]\n";
+        ss << "  Local Neurons: " << local_num_neurons 
+           << " (" << (local_num_neurons * 100.0 / global_num_neurons) << "%)\n";
+        ss << "  Communication Partners: " << comm_map.size() << "\n";
+        
+        if (!comm_map.empty()) {
+            ss << "  Export/Import Summary:\n";
+            for (size_t rank = 0; rank < comm_map.size(); rank++) {
+                const auto& comm = comm_map[rank];
+                if (comm.export_count > 0 || comm.import_count > 0) {
+                    ss << "    Rank " << rank
+                       << ": Export=" << comm.export_count 
+                       << ", Import=" << comm.import_count << "\n";
+                }
+            }
+        }
+        
         return ss.str();
     }
 

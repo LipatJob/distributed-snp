@@ -1,5 +1,6 @@
 #include "ISnpSimulator.hpp"
 #include "SnpSystemConfig.hpp"
+#include "PerformanceMetrics.hpp"
 #include <cuda_runtime.h>
 #include <vector>
 #include <memory>
@@ -501,16 +502,46 @@ public:
         total_compute_time = 0.0;
     }
 
+    PerformanceMetrics getPerformanceMetrics() const override {
+        PerformanceMetrics metrics;
+        
+        // Core metrics
+        metrics.steps_executed = steps_executed;
+        metrics.total_time_ms = total_compute_time;
+        metrics.compute_time_ms = total_compute_time;
+        
+        // CUDA metrics (sparse implementation is fully GPU-based)
+        metrics.cuda.kernel_time_ms = total_compute_time;
+        
+        // Calculate device memory
+        size_t state_mem = num_neurons * sizeof(int) * 5;
+        size_t rule_mem = total_rules * sizeof(int) * 4;
+        size_t neuron_map_mem = num_neurons * sizeof(int) * 2;
+        size_t synapse_mem = max_out_degree * num_neurons * sizeof(int) * 2;
+        metrics.cuda.device_memory_allocated = state_mem + rule_mem + neuron_map_mem + synapse_mem;
+        
+        // Algorithm metrics with sparsity info
+        metrics.algorithm.num_neurons = num_neurons;
+        metrics.algorithm.total_rules = total_rules;
+        metrics.algorithm.max_out_degree = max_out_degree;
+        
+        // Calculate sparsity (percentage of non-null synapses in compressed format)
+        if (max_out_degree > 0 && num_neurons > 0) {
+            // Sparsity = reduction in storage vs. dense matrix
+            metrics.algorithm.sparsity = 1.0 - (1.0 / (max_out_degree + 1)); // Approximation
+        }
+        
+        return metrics;
+    }
+
     std::string getPerformanceReport() const override {
+        PerformanceMetrics metrics = getPerformanceMetrics();
         std::ostringstream ss;
-        ss << "=== Sparse CUDA SNP Simulator (Compressed/Optimized) ===\n";
-        ss << "Neurons: " << num_neurons << ", Max Out-Degree (Z): " << max_out_degree << "\n";
-        ss << "Total Rules: " << total_rules << "\n";
-        ss << "Steps Executed: " << steps_executed << "\n";
-        ss << "Total Compute Time: " << total_compute_time << " ms\n";
-        if (steps_executed > 0)
-            ss << "Avg Time/Step: " << (total_compute_time / steps_executed) << " ms\n";
-        ss << "Matrix Strategy: Compressed Synapse Matrix (Sy_Pi)\n";
+        ss << metrics.toReport("Sparse CUDA SNP Simulator (Compressed)");
+        ss << "\n[Compression Details]\n";
+        ss << "  Storage: Column-major synapse matrix (" 
+           << max_out_degree << " x " << num_neurons << ")\n";
+        ss << "  Matrix Strategy: Compressed Synapse Matrix (Sy_Pi)\n";
         return ss.str();
     }
 };

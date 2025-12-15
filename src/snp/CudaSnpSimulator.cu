@@ -1,5 +1,6 @@
 #include "ISnpSimulator.hpp"
 #include "SnpSystemConfig.hpp"
+#include "PerformanceMetrics.hpp"
 #include <cuda_runtime.h>
 #include <vector>
 #include <memory>
@@ -420,23 +421,41 @@ public:
         steps_executed = 0;
     }
     
+    PerformanceMetrics getPerformanceMetrics() const override {
+        PerformanceMetrics metrics;
+        
+        // Core metrics
+        metrics.steps_executed = steps_executed;
+        metrics.total_time_ms = total_compute_time_ms;
+        metrics.compute_time_ms = total_compute_time_ms;
+        
+        // CUDA metrics
+        metrics.cuda.kernel_time_ms = total_kernel_time_ms;
+        metrics.cuda.memory_transfer_time_ms = total_memory_time_ms;
+        
+        // Calculate device memory usage
+        size_t neuron_mem = num_neurons * (sizeof(int) * 6); // 6 arrays
+        size_t rule_mem = total_rules * (sizeof(int) * 5) + num_neurons * (sizeof(int) * 2);
+        size_t synapse_mem = num_synapses * (sizeof(int) * 3);
+        metrics.cuda.device_memory_allocated = neuron_mem + rule_mem + synapse_mem;
+        
+        // Algorithm metrics
+        metrics.algorithm.num_neurons = num_neurons;
+        metrics.algorithm.num_synapses = num_synapses;
+        metrics.algorithm.total_rules = total_rules;
+        
+        return metrics;
+    }
+    
     std::string getPerformanceReport() const override {
+        PerformanceMetrics metrics = getPerformanceMetrics();
         std::ostringstream report;
-        report << "=== CUDA SNP Simulator Performance Report ===\n";
-        report << "Total Steps: " << steps_executed << "\n";
-        report << "Total Compute Time: " << total_compute_time_ms << " ms\n";
-        report << "  - Kernel Time: " << total_kernel_time_ms << " ms\n";
-        report << "  - Memory Transfer Time: " << total_memory_time_ms << " ms\n";
-        if (steps_executed > 0) {
-            report << "Average Time per Step: " 
-                   << (total_compute_time_ms / steps_executed) << " ms\n";
-        }
-        report << "System Size: " << num_neurons << " neurons, " 
-               << num_synapses << " synapses, " << total_rules << " rules\n";
-        report << "Kernel Config: " << neuron_grid_size << " blocks x " 
-               << BLOCK_SIZE << " threads (neurons)\n";
-        report << "               " << synapse_grid_size << " blocks x " 
-               << BLOCK_SIZE << " threads (synapses)\n";
+        report << metrics.toReport("CUDA SNP Simulator");
+        report << "\n[Launch Configuration]\n";
+        report << "  Neuron Grid: " << neuron_grid_size << " blocks x " 
+               << BLOCK_SIZE << " threads\n";
+        report << "  Synapse Grid: " << synapse_grid_size << " blocks x " 
+               << BLOCK_SIZE << " threads\n";
         return report.str();
     }
     
