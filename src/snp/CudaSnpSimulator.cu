@@ -19,66 +19,56 @@
         } \
     } while(0)
 
-// Optimal block size for most modern GPUs (multiple of warp size 32)
-constexpr int BLOCK_SIZE = 64;
+constexpr int BLOCK_SIZE = 256; // Increased block size for better occupancy
 
 /**
- * @brief Structure of Arrays (SoA) for Neurons on Device
- * 
- * Benefits:
- * - Coalesced memory access (threads access consecutive memory)
- * - Better cache utilization
- * - Reduced bank conflicts in shared memory
+ * @brief Optimized Structure of Arrays (SoA) for Neurons
+ * Using int for is_open for alignment
  */
 struct DeviceNeuronData {
-    int* configuration;       // Current spike count per neuron
-    int* initial_config;      // Initial state for reset
-    char* is_open;           // Neuron open/closed status. Is boolean but using char for alignment
+    int* configuration;       // Spike count
+    int* initial_config;      // For reset
+    int* is_open;            // 1 = open, 0 = closed (int for alignment)
     int* delay_timer;        // Remaining delay ticks
-    int* pending_emission;   // Spikes to emit when delay expires
-    int* spike_production;   // Temporary: spikes produced this step
+    int* pending_emission;   // Spikes waiting in delay buffer
+    int* current_output;     // Unified output buffer for the current step
     int num_neurons;
     
     void allocate(int n) {
         num_neurons = n;
         CUDA_CHECK(cudaMalloc(&configuration, n * sizeof(int)));
         CUDA_CHECK(cudaMalloc(&initial_config, n * sizeof(int)));
-        CUDA_CHECK(cudaMalloc(&is_open, n * sizeof(bool)));
+        CUDA_CHECK(cudaMalloc(&is_open, n * sizeof(int)));
         CUDA_CHECK(cudaMalloc(&delay_timer, n * sizeof(int)));
         CUDA_CHECK(cudaMalloc(&pending_emission, n * sizeof(int)));
-        CUDA_CHECK(cudaMalloc(&spike_production, n * sizeof(int)));
+        CUDA_CHECK(cudaMalloc(&current_output, n * sizeof(int)));
     }
     
     void deallocate() {
-        cudaFree(configuration);
-        cudaFree(initial_config);
-        cudaFree(is_open);
-        cudaFree(delay_timer);
-        cudaFree(pending_emission);
-        cudaFree(spike_production);
+        if (configuration) cudaFree(configuration);
+        if (initial_config) cudaFree(initial_config);
+        if (is_open) cudaFree(is_open);
+        if (delay_timer) cudaFree(delay_timer);
+        if (pending_emission) cudaFree(pending_emission);
+        if (current_output) cudaFree(current_output);
     }
 };
 
 /**
- * @brief Structure of Arrays (SoA) for Rules on Device
- * 
- * Rules are organized per-neuron for efficient access.
- * Each neuron has a contiguous range of rules.
+ * @brief Device Rule Data (Read-Only during execution)
  */
 struct DeviceRuleData {
-    int* neuron_id;           // Which neuron this rule belongs to
-    int* input_threshold;     // Minimum spikes needed to fire
-    int* spikes_consumed;     // Spikes consumed when fired
-    int* spikes_produced;     // Spikes produced when fired
-    int* delay;              // Delay before emission
-    int* rule_start_idx;     // Start index of rules for each neuron
-    int* rule_count;         // Number of rules per neuron
+    int* neuron_id;
+    int* input_threshold;
+    int* spikes_consumed;
+    int* spikes_produced;
+    int* delay;
+    int* rule_start_idx;
+    int* rule_count;
     int total_rules;
-    int num_neurons;
     
     void allocate(int num_rules, int num_n) {
         total_rules = num_rules;
-        num_neurons = num_n;
         CUDA_CHECK(cudaMalloc(&neuron_id, num_rules * sizeof(int)));
         CUDA_CHECK(cudaMalloc(&input_threshold, num_rules * sizeof(int)));
         CUDA_CHECK(cudaMalloc(&spikes_consumed, num_rules * sizeof(int)));
@@ -89,18 +79,18 @@ struct DeviceRuleData {
     }
     
     void deallocate() {
-        cudaFree(neuron_id);
-        cudaFree(input_threshold);
-        cudaFree(spikes_consumed);
-        cudaFree(spikes_produced);
-        cudaFree(delay);
-        cudaFree(rule_start_idx);
-        cudaFree(rule_count);
+        if (neuron_id) cudaFree(neuron_id);
+        if (input_threshold) cudaFree(input_threshold);
+        if (spikes_consumed) cudaFree(spikes_consumed);
+        if (spikes_produced) cudaFree(spikes_produced);
+        if (delay) cudaFree(delay);
+        if (rule_start_idx) cudaFree(rule_start_idx);
+        if (rule_count) cudaFree(rule_count);
     }
 };
 
 /**
- * @brief Structure of Arrays (SoA) for Synapses on Device
+ * @brief Device Synapse Data (Read-Only topology)
  */
 struct DeviceSynapseData {
     int* source_id;
@@ -116,229 +106,152 @@ struct DeviceSynapseData {
     }
     
     void deallocate() {
-        cudaFree(source_id);
-        cudaFree(dest_id);
-        cudaFree(weight);
+        if (source_id) cudaFree(source_id);
+        if (dest_id) cudaFree(dest_id);
+        if (weight) cudaFree(weight);
     }
 };
 
 /**
- * @brief CUDA Kernel: Update neuron status based on delay timers
- * 
- * Each thread handles one neuron.
- * - Decrement delay timers
- * - Open neurons when delay reaches 0
- * 
- * Memory access pattern: Each thread accesses its own index (coalesced)
+ * @brief Fused Neuron Logic Kernel
+ * * Handles:
+ * 1. Timer updates (decrement delay)
+ * 2. Delay expiration (closed -> open, release pending spikes)
+ * 3. Rule matching and execution
+ * 4. Spike consumption
+ * 5. Output scheduling (immediate or delayed)
+ * * Writes total spikes to emit this step into `current_output`.
  */
-static __global__ void updateNeuronStatusKernel(
-    DeviceNeuronData neurons
+static __global__ void neuronDynamicsKernel(
+    DeviceNeuronData neurons,
+    const int* __restrict__ rule_start_idx,
+    const int* __restrict__ rule_count,
+    const int* __restrict__ rule_threshold,
+    const int* __restrict__ rule_consumed,
+    const int* __restrict__ rule_produced,
+    const int* __restrict__ rule_delay
 ) {
-    int neuron_id = blockIdx.x * blockDim.x + threadIdx.x;
-    
-    if (neuron_id >= neurons.num_neurons) return;
-    
-    // Decrement delay timer if active
-    if (neurons.delay_timer[neuron_id] > 0) {
-        neurons.delay_timer[neuron_id]--;
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= neurons.num_neurons) return;
+
+    // Local registers for state
+    int current_delay = neurons.delay_timer[idx];
+    int is_open = neurons.is_open[idx];
+    int spikes_to_emit_now = 0;
+
+    // --- Phase 1: Update Delay Status ---
+    if (current_delay > 0) {
+        current_delay--;
+        neurons.delay_timer[idx] = current_delay;
         
-        // Open neuron when delay expires
-        if (neurons.delay_timer[neuron_id] == 0) {
-            neurons.is_open[neuron_id] = true;
+        if (current_delay == 0) {
+            // Delay expired: Open neuron and release pending buffer
+            is_open = 1;
+            neurons.is_open[idx] = 1;
+            spikes_to_emit_now += neurons.pending_emission[idx];
+            neurons.pending_emission[idx] = 0; // Clear buffer
         }
     }
-}
 
-/**
- * @brief CUDA Kernel: Select and apply firing rules
- * 
- * Each thread handles one neuron.
- * - Find first applicable rule (deterministic)
- * - Consume spikes
- * - Schedule production (immediate or delayed)
- * 
- * Optimization: Minimize branch divergence by early exit for closed neurons
- */
-static __global__ void selectAndApplyRulesKernel(
-    DeviceNeuronData neurons,
-    DeviceRuleData rules
-) {
-    int neuron_id = blockIdx.x * blockDim.x + threadIdx.x;
-    
-    if (neuron_id >= neurons.num_neurons) return;
-    
-    // Early exit for closed neurons (reduces divergence)
-    if (!neurons.is_open[neuron_id]) return;
-    
-    int current_spikes = neurons.configuration[neuron_id];
-    int rule_start = rules.rule_start_idx[neuron_id];
-    int rule_end = rule_start + rules.rule_count[neuron_id];
-    
-    // Find first applicable rule (deterministic by order)
-    for (int rule_idx = rule_start; rule_idx < rule_end; ++rule_idx) {
-        int threshold = rules.input_threshold[rule_idx];
-        
-        // Check if rule is applicable
-        if (current_spikes >= threshold) {
-            int consumed = rules.spikes_consumed[rule_idx];
-            int produced = rules.spikes_produced[rule_idx];
-            int rule_delay = rules.delay[rule_idx];
-            
-            // Consume spikes
-            neurons.configuration[neuron_id] -= consumed;
-            
-            // Handle spike production based on delay
-            if (rule_delay > 0) {
-                // Close neuron and schedule emission
-                neurons.is_open[neuron_id] = false;
-                neurons.delay_timer[neuron_id] = rule_delay;
-                neurons.pending_emission[neuron_id] = produced;
-            } else {
-                // Immediate production
-                neurons.spike_production[neuron_id] = produced;
+    // --- Phase 2: Apply Rules (Only if open) ---
+    if (is_open) {
+        int current_spikes = neurons.configuration[idx];
+        int r_start = rule_start_idx[idx];
+        int r_count = rule_count[idx];
+        int r_end = r_start + r_count;
+
+        // Linear scan for first applicable rule
+        for (int i = r_start; i < r_end; ++i) {
+            if (current_spikes >= rule_threshold[i]) {
+                // Apply Rule
+                int consumed = rule_consumed[i];
+                int produced = rule_produced[i];
+                int d = rule_delay[i];
+
+                // Consume spikes
+                neurons.configuration[idx] = current_spikes - consumed;
+
+                if (d > 0) {
+                    // Close neuron, schedule for later
+                    neurons.is_open[idx] = 0;
+                    neurons.delay_timer[idx] = d;
+                    neurons.pending_emission[idx] = produced;
+                } else {
+                    // Immediate emission
+                    spikes_to_emit_now += produced;
+                }
+                
+                // Determinism: Only one rule fires per step
+                break;
             }
-            
-            // Only apply first applicable rule
-            break;
         }
     }
+
+    // --- Phase 3: Write Output ---
+    // We overwrite current_output every step, effectively clearing it
+    neurons.current_output[idx] = spikes_to_emit_now;
 }
 
 /**
- * @brief CUDA Kernel: Propagate pending emissions (from delayed rules)
- * 
- * Each thread handles one synapse, reading from neurons that just opened.
- * Uses atomicAdd for concurrent writes to destination neurons.
- * 
- * Only propagates when source neuron is open (delay has expired).
+ * @brief Unified Synapse Propagation Kernel
+ * * Reads `current_output` from source neurons and adds to destination.
+ * Handles both immediate firings and delayed emissions that just matured.
  */
-static __global__ void propagatePendingEmissionsKernel(
-    DeviceNeuronData neurons,
-    DeviceSynapseData synapses
+static __global__ void synapseTransferKernel(
+    const int* __restrict__ output_spikes, // Read from neurons.current_output
+    int* __restrict__ neuron_config,       // Write to neurons.configuration
+    const int* __restrict__ src_ids,
+    const int* __restrict__ dest_ids,
+    const int* __restrict__ weights,
+    int num_synapses
 ) {
-    int synapse_id = blockIdx.x * blockDim.x + threadIdx.x;
-    
-    if (synapse_id >= synapses.num_synapses) return;
-    
-    int source = synapses.source_id[synapse_id];
-    int dest = synapses.dest_id[synapse_id];
-    int weight = synapses.weight[synapse_id];
-    
-    // Only propagate if source neuron is open (delay expired) AND has pending emission
-    if (neurons.is_open[source] && neurons.pending_emission[source] > 0) {
-        int spikes_to_send = neurons.pending_emission[source] * weight;
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= num_synapses) return;
+
+    int src = src_ids[idx];
+    int produced_spikes = output_spikes[src];
+
+    // Warp divergence check: most neurons won't fire every step.
+    if (produced_spikes > 0) {
+        int dest = dest_ids[idx];
+        int w = weights[idx];
         
-        // Only open neurons can receive spikes
-        if (neurons.is_open[dest]) {
-            atomicAdd(&neurons.configuration[dest], spikes_to_send);
-        }
+        // Atomic add is necessary because multiple synapses may target the same neuron
+        atomicAdd(&neuron_config[dest], produced_spikes * w);
     }
 }
 
-/**
- * @brief CUDA Kernel: Clear pending emissions after propagation
- * 
- * Only clears if the neuron is open (meaning the pending emission was just propagated).
- */
-static __global__ void clearPendingEmissionsKernel(DeviceNeuronData neurons) {
-    int neuron_id = blockIdx.x * blockDim.x + threadIdx.x;
+static __global__ void resetKernel(DeviceNeuronData neurons) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= neurons.num_neurons) return;
     
-    if (neuron_id >= neurons.num_neurons) return;
-    
-    // Only clear if neuron is open (pending emission was propagated)
-    if (neurons.is_open[neuron_id]) {
-        neurons.pending_emission[neuron_id] = 0;
-    }
+    neurons.configuration[idx] = neurons.initial_config[idx];
+    neurons.is_open[idx] = 1;
+    neurons.delay_timer[idx] = 0;
+    neurons.pending_emission[idx] = 0;
+    neurons.current_output[idx] = 0;
 }
 
-/**
- * @brief CUDA Kernel: Propagate immediate spike production through synapses
- * 
- * Each thread handles one synapse.
- * Uses atomicAdd for safe concurrent writes to destination neurons.
- */
-static __global__ void propagateImmediateSpikesKernel(
-    DeviceNeuronData neurons,
-    DeviceSynapseData synapses
-) {
-    int synapse_id = blockIdx.x * blockDim.x + threadIdx.x;
-    
-    if (synapse_id >= synapses.num_synapses) return;
-    
-    int source = synapses.source_id[synapse_id];
-    int dest = synapses.dest_id[synapse_id];
-    int weight = synapses.weight[synapse_id];
-    
-    int spikes = neurons.spike_production[source];
-    if (spikes > 0) {
-        int spikes_to_send = spikes * weight;
-        
-        // Only open neurons can receive spikes
-        if (neurons.is_open[dest]) {
-            atomicAdd(&neurons.configuration[dest], spikes_to_send);
-        }
-    }
-}
-
-/**
- * @brief CUDA Kernel: Clear spike production buffer
- */
-static __global__ void clearSpikeProductionKernel(DeviceNeuronData neurons) {
-    int neuron_id = blockIdx.x * blockDim.x + threadIdx.x;
-    
-    if (neuron_id >= neurons.num_neurons) return;
-    
-    neurons.spike_production[neuron_id] = 0;
-}
-
-/**
- * @brief CUDA Kernel: Reset neurons to initial state
- */
-static __global__ void resetNeuronsKernel(DeviceNeuronData neurons) {
-    int neuron_id = blockIdx.x * blockDim.x + threadIdx.x;
-    
-    if (neuron_id >= neurons.num_neurons) return;
-    
-    neurons.configuration[neuron_id] = neurons.initial_config[neuron_id];
-    neurons.is_open[neuron_id] = true;
-    neurons.delay_timer[neuron_id] = 0;
-    neurons.pending_emission[neuron_id] = 0;
-    neurons.spike_production[neuron_id] = 0;
-}
-
-/**
- * @brief High-Performance CUDA Implementation of SN P System Simulator
- * 
- * Key Optimizations:
- * 1. Structure of Arrays (SoA) for coalesced memory access
- * 2. Optimized kernel launch configurations for GPU occupancy
- * 3. Minimized branch divergence via early exits
- * 4. Atomic operations for safe concurrent spike propagation
- * 5. Separate kernels for different phases to reduce complexity
- */
 class CudaSnpSimulator : public ISnpSimulator {
 private:
-    // Host-side configuration
     SnpSystemConfig config;
     int num_neurons = 0;
     int num_synapses = 0;
     int total_rules = 0;
     
-    // Device-side data structures
     DeviceNeuronData d_neurons;
     DeviceRuleData d_rules;
     DeviceSynapseData d_synapses;
     
-    // Performance tracking
+    // Pinned memory for fast transfers
+    int* h_pinned_state = nullptr;
+    
     double total_compute_time_ms = 0.0;
-    double total_kernel_time_ms = 0.0;
-    double total_memory_time_ms = 0.0;
     int steps_executed = 0;
     
-    // Kernel launch configurations
-    int neuron_grid_size = 0;
-    int synapse_grid_size = 0;
-    
+    int neuron_grid = 0;
+    int synapse_grid = 0;
+
 public:
     CudaSnpSimulator() = default;
     
@@ -348,77 +261,91 @@ public:
     
     bool loadSystem(const SnpSystemConfig& sys_config) override {
         try {
+            cleanup(); // Ensure clean slate
             config = sys_config;
             num_neurons = config.neurons.size();
             num_synapses = config.synapses.size();
             total_rules = config.getTotalRulesCount();
             
-            // Allocate device memory
+            // Allocate Device Memory
             d_neurons.allocate(num_neurons);
             d_rules.allocate(total_rules, num_neurons);
             d_synapses.allocate(num_synapses);
             
-            // Prepare and upload neuron data
-            uploadNeuronData();
+            // Allocate Pinned Memory
+            CUDA_CHECK(cudaMallocHost(&h_pinned_state, num_neurons * sizeof(int)));
             
-            // Prepare and upload rule data
-            uploadRuleData();
+            uploadData();
             
-            // Upload synapse data
-            uploadSynapseData();
-            
-            // Calculate optimal kernel launch configurations
-            neuron_grid_size = (num_neurons + BLOCK_SIZE - 1) / BLOCK_SIZE;
-            synapse_grid_size = (num_synapses + BLOCK_SIZE - 1) / BLOCK_SIZE;
+            // Calc grids
+            neuron_grid = (num_neurons + BLOCK_SIZE - 1) / BLOCK_SIZE;
+            synapse_grid = (num_synapses + BLOCK_SIZE - 1) / BLOCK_SIZE;
             
             return true;
-            
         } catch (const std::exception& e) {
-            std::cerr << "Error loading system: " << e.what() << std::endl;
-            cleanup();
+            std::cerr << "CudaSnpSimulator Error: " << e.what() << std::endl;
             return false;
         }
     }
     
     void step(int steps = 1) override {
-        for (int step_num = 0; step_num < steps; ++step_num) {
-            auto start = std::chrono::high_resolution_clock::now();
-            
-            executeOneStep();
-            
-            auto end = std::chrono::high_resolution_clock::now();
-            std::chrono::duration<double, std::milli> elapsed = end - start;
-            total_compute_time_ms += elapsed.count();
-            steps_executed++;
-        }
-    }
-    
-    std::vector<int> getGlobalState() const override {
-        std::vector<int> state(num_neurons);
-        
+        if (num_neurons == 0) return;
+
         auto start = std::chrono::high_resolution_clock::now();
         
-        CUDA_CHECK(cudaMemcpy(state.data(), d_neurons.configuration, 
-                   num_neurons * sizeof(int), cudaMemcpyDeviceToHost));
+        for (int i = 0; i < steps; ++i) {
+            // Kernel 1: Neuron Logic (Update, Fire, Generate Output)
+            neuronDynamicsKernel<<<neuron_grid, BLOCK_SIZE>>>(
+                d_neurons,
+                d_rules.rule_start_idx,
+                d_rules.rule_count,
+                d_rules.input_threshold,
+                d_rules.spikes_consumed,
+                d_rules.spikes_produced,
+                d_rules.delay
+            );
+            
+            // Kernel 2: Synapse Propagation (Transfer Spikes)
+            if (num_synapses > 0) {
+                // Ensure Neuron logic is done before propagating
+                // (Implicit serialization in stream 0, but good for clarity)
+                synapseTransferKernel<<<synapse_grid, BLOCK_SIZE>>>(
+                    d_neurons.current_output,
+                    d_neurons.configuration,
+                    d_synapses.source_id,
+                    d_synapses.dest_id,
+                    d_synapses.weight,
+                    num_synapses
+                );
+            }
+        }
+        
+        CUDA_CHECK(cudaDeviceSynchronize());
         
         auto end = std::chrono::high_resolution_clock::now();
         std::chrono::duration<double, std::milli> elapsed = end - start;
-        const_cast<CudaSnpSimulator*>(this)->total_memory_time_ms += elapsed.count();
+        total_compute_time_ms += elapsed.count();
+        steps_executed += steps;
+    }
+    
+    std::vector<int> getGlobalState() const override {
+        if (num_neurons == 0) return {};
         
-        return state;
+        // Fast copy to pinned memory
+        CUDA_CHECK(cudaMemcpy(h_pinned_state, d_neurons.configuration, 
+                   num_neurons * sizeof(int), cudaMemcpyDeviceToHost));
+        
+        // Construct vector from pinned memory
+        // This is much faster than cudaMemcpy directly to vector.data() if the vector is paged
+        return std::vector<int>(h_pinned_state, h_pinned_state + num_neurons);
     }
     
     void reset() override {
         if (num_neurons == 0) return;
-        
-        // Reset using CUDA kernel for efficiency
-        resetNeuronsKernel<<<neuron_grid_size, BLOCK_SIZE>>>(d_neurons);
+        resetKernel<<<neuron_grid, BLOCK_SIZE>>>(d_neurons);
         CUDA_CHECK(cudaDeviceSynchronize());
-        
-        total_compute_time_ms = 0.0;
-        total_kernel_time_ms = 0.0;
-        total_memory_time_ms = 0.0;
         steps_executed = 0;
+        total_compute_time_ms = 0.0;
     }
     
     PerformanceMetrics getPerformanceMetrics() const override {
@@ -427,19 +354,15 @@ public:
         // Core metrics
         metrics.steps_executed = steps_executed;
         metrics.total_time_ms = total_compute_time_ms;
-        metrics.compute_time_ms = total_compute_time_ms;
+        metrics.compute_time_ms = total_compute_time_ms; // For single-GPU, compute = total
         
         // CUDA metrics
-        metrics.cuda.kernel_time_ms = total_kernel_time_ms;
-        metrics.cuda.memory_transfer_time_ms = total_memory_time_ms;
+        metrics.cuda.kernel_time_ms = total_compute_time_ms;
+        // Note: We're not separately tracking memory transfer time in this implementation
+        // since transfers only happen on getGlobalState() and loadSystem()
+        metrics.cuda.memory_transfer_time_ms = 0.0;
         
-        // Calculate device memory usage
-        size_t neuron_mem = num_neurons * (sizeof(int) * 6); // 6 arrays
-        size_t rule_mem = total_rules * (sizeof(int) * 5) + num_neurons * (sizeof(int) * 2);
-        size_t synapse_mem = num_synapses * (sizeof(int) * 3);
-        metrics.cuda.device_memory_allocated = neuron_mem + rule_mem + synapse_mem;
-        
-        // Algorithm metrics
+        // Algorithm/System metrics
         metrics.algorithm.num_neurons = num_neurons;
         metrics.algorithm.num_synapses = num_synapses;
         metrics.algorithm.total_rules = total_rules;
@@ -449,166 +372,78 @@ public:
     
     std::string getPerformanceReport() const override {
         PerformanceMetrics metrics = getPerformanceMetrics();
-        std::ostringstream report;
-        report << metrics.toReport("CUDA SNP Simulator");
-        report << "\n[Launch Configuration]\n";
-        report << "  Neuron Grid: " << neuron_grid_size << " blocks x " 
-               << BLOCK_SIZE << " threads\n";
-        report << "  Synapse Grid: " << synapse_grid_size << " blocks x " 
-               << BLOCK_SIZE << " threads\n";
-        return report.str();
+        return metrics.toReport("CUDA SNP Simulator");
     }
-    
+
 private:
     void cleanup() {
-        if (num_neurons > 0) d_neurons.deallocate();
-        if (total_rules > 0) d_rules.deallocate();
-        if (num_synapses > 0) d_synapses.deallocate();
-        num_neurons = 0;
-        num_synapses = 0;
-        total_rules = 0;
+        d_neurons.deallocate();
+        d_rules.deallocate();
+        d_synapses.deallocate();
+        if (h_pinned_state) {
+            cudaFreeHost(h_pinned_state);
+            h_pinned_state = nullptr;
+        }
     }
     
-    void uploadNeuronData() {
-        // Prepare host arrays
-        std::vector<int> h_configuration(num_neurons);
-        std::vector<char> h_is_open(num_neurons, true);
-        std::vector<int> h_delay_timer(num_neurons, 0);
-        std::vector<int> h_pending_emission(num_neurons, 0);
-        std::vector<int> h_spike_production(num_neurons, 0);
+    void uploadData() {
+        // --- 1. Neuron Data ---
+        std::vector<int> h_config(num_neurons);
+        std::vector<int> h_open(num_neurons, 1);
         
-        for (int i = 0; i < num_neurons; ++i) {
-            h_configuration[i] = config.neurons[i].initial_spikes;
+        for(int i=0; i<num_neurons; ++i) {
+            h_config[i] = config.neurons[i].initial_spikes;
         }
         
-        // Upload to device
-        CUDA_CHECK(cudaMemcpy(d_neurons.configuration, h_configuration.data(), 
-                   num_neurons * sizeof(int), cudaMemcpyHostToDevice));
-        CUDA_CHECK(cudaMemcpy(d_neurons.initial_config, h_configuration.data(), 
-                   num_neurons * sizeof(int), cudaMemcpyHostToDevice));
-        CUDA_CHECK(cudaMemcpy(d_neurons.is_open, h_is_open.data(), 
-                   num_neurons * sizeof(bool), cudaMemcpyHostToDevice));
-        CUDA_CHECK(cudaMemcpy(d_neurons.delay_timer, h_delay_timer.data(), 
-                   num_neurons * sizeof(int), cudaMemcpyHostToDevice));
-        CUDA_CHECK(cudaMemcpy(d_neurons.pending_emission, h_pending_emission.data(), 
-                   num_neurons * sizeof(int), cudaMemcpyHostToDevice));
-        CUDA_CHECK(cudaMemcpy(d_neurons.spike_production, h_spike_production.data(), 
-                   num_neurons * sizeof(int), cudaMemcpyHostToDevice));
-    }
-    
-    void uploadRuleData() {
-        // Flatten rules into SoA format
-        std::vector<int> h_neuron_id;
-        std::vector<int> h_threshold;
-        std::vector<int> h_consumed;
-        std::vector<int> h_produced;
-        std::vector<int> h_delay;
-        std::vector<int> h_rule_start_idx(num_neurons);
-        std::vector<int> h_rule_count(num_neurons);
+        CUDA_CHECK(cudaMemcpy(d_neurons.configuration, h_config.data(), num_neurons * sizeof(int), cudaMemcpyHostToDevice));
+        CUDA_CHECK(cudaMemcpy(d_neurons.initial_config, h_config.data(), num_neurons * sizeof(int), cudaMemcpyHostToDevice));
+        CUDA_CHECK(cudaMemcpy(d_neurons.is_open, h_open.data(), num_neurons * sizeof(int), cudaMemcpyHostToDevice));
+        CUDA_CHECK(cudaMemset(d_neurons.delay_timer, 0, num_neurons * sizeof(int)));
+        CUDA_CHECK(cudaMemset(d_neurons.pending_emission, 0, num_neurons * sizeof(int)));
+        CUDA_CHECK(cudaMemset(d_neurons.current_output, 0, num_neurons * sizeof(int)));
+
+        // --- 2. Rule Data ---
+        std::vector<int> h_threshold, h_consumed, h_produced, h_delay;
+        std::vector<int> h_start(num_neurons), h_count(num_neurons);
         
-        int rule_idx = 0;
-        for (int neuron_id = 0; neuron_id < num_neurons; ++neuron_id) {
-            const auto& neuron = config.neurons[neuron_id];
-            h_rule_start_idx[neuron_id] = rule_idx;
-            h_rule_count[neuron_id] = neuron.rules.size();
-            
-            for (const auto& rule : neuron.rules) {
-                h_neuron_id.push_back(neuron_id);
-                h_threshold.push_back(rule.input_threshold);
-                h_consumed.push_back(rule.spikes_consumed);
-                h_produced.push_back(rule.spikes_produced);
-                h_delay.push_back(rule.delay);
-                rule_idx++;
+        int current_idx = 0;
+        for(int i=0; i<num_neurons; ++i) {
+            const auto& rules = config.neurons[i].rules;
+            h_start[i] = current_idx;
+            h_count[i] = rules.size();
+            for(const auto& r : rules) {
+                h_threshold.push_back(r.input_threshold);
+                h_consumed.push_back(r.spikes_consumed);
+                h_produced.push_back(r.spikes_produced);
+                h_delay.push_back(r.delay);
+                current_idx++;
             }
         }
         
-        // Upload to device
         if (total_rules > 0) {
-            CUDA_CHECK(cudaMemcpy(d_rules.neuron_id, h_neuron_id.data(), 
-                       total_rules * sizeof(int), cudaMemcpyHostToDevice));
-            CUDA_CHECK(cudaMemcpy(d_rules.input_threshold, h_threshold.data(), 
-                       total_rules * sizeof(int), cudaMemcpyHostToDevice));
-            CUDA_CHECK(cudaMemcpy(d_rules.spikes_consumed, h_consumed.data(), 
-                       total_rules * sizeof(int), cudaMemcpyHostToDevice));
-            CUDA_CHECK(cudaMemcpy(d_rules.spikes_produced, h_produced.data(), 
-                       total_rules * sizeof(int), cudaMemcpyHostToDevice));
-            CUDA_CHECK(cudaMemcpy(d_rules.delay, h_delay.data(), 
-                       total_rules * sizeof(int), cudaMemcpyHostToDevice));
+            CUDA_CHECK(cudaMemcpy(d_rules.input_threshold, h_threshold.data(), total_rules * sizeof(int), cudaMemcpyHostToDevice));
+            CUDA_CHECK(cudaMemcpy(d_rules.spikes_consumed, h_consumed.data(), total_rules * sizeof(int), cudaMemcpyHostToDevice));
+            CUDA_CHECK(cudaMemcpy(d_rules.spikes_produced, h_produced.data(), total_rules * sizeof(int), cudaMemcpyHostToDevice));
+            CUDA_CHECK(cudaMemcpy(d_rules.delay, h_delay.data(), total_rules * sizeof(int), cudaMemcpyHostToDevice));
         }
-        CUDA_CHECK(cudaMemcpy(d_rules.rule_start_idx, h_rule_start_idx.data(), 
-                   num_neurons * sizeof(int), cudaMemcpyHostToDevice));
-        CUDA_CHECK(cudaMemcpy(d_rules.rule_count, h_rule_count.data(), 
-                   num_neurons * sizeof(int), cudaMemcpyHostToDevice));
-    }
-    
-    void uploadSynapseData() {
-        if (num_synapses == 0) return;
-        
-        std::vector<int> h_source_id(num_synapses);
-        std::vector<int> h_dest_id(num_synapses);
-        std::vector<int> h_weight(num_synapses);
-        
-        for (int i = 0; i < num_synapses; ++i) {
-            h_source_id[i] = config.synapses[i].source_id;
-            h_dest_id[i] = config.synapses[i].dest_id;
-            h_weight[i] = config.synapses[i].weight;
-        }
-        
-        CUDA_CHECK(cudaMemcpy(d_synapses.source_id, h_source_id.data(), 
-                   num_synapses * sizeof(int), cudaMemcpyHostToDevice));
-        CUDA_CHECK(cudaMemcpy(d_synapses.dest_id, h_dest_id.data(), 
-                   num_synapses * sizeof(int), cudaMemcpyHostToDevice));
-        CUDA_CHECK(cudaMemcpy(d_synapses.weight, h_weight.data(), 
-                   num_synapses * sizeof(int), cudaMemcpyHostToDevice));
-    }
-    
-    void executeOneStep() {
-        auto kernel_start = std::chrono::high_resolution_clock::now();
-        
-        if (neuron_grid_size == 0) {
-             std::cerr << "Error: neuron_grid_size is 0. num_neurons=" << num_neurons << std::endl;
-             return;
-        }
+        CUDA_CHECK(cudaMemcpy(d_rules.rule_start_idx, h_start.data(), num_neurons * sizeof(int), cudaMemcpyHostToDevice));
+        CUDA_CHECK(cudaMemcpy(d_rules.rule_count, h_count.data(), num_neurons * sizeof(int), cudaMemcpyHostToDevice));
 
-        // Phase 1: Update neuron status (delay timers, open/closed)
-        updateNeuronStatusKernel<<<neuron_grid_size, BLOCK_SIZE>>>(d_neurons);
-        CUDA_CHECK(cudaGetLastError());
-        
-        // Phase 2: Select and apply firing rules
-        selectAndApplyRulesKernel<<<neuron_grid_size, BLOCK_SIZE>>>(d_neurons, d_rules);
-        CUDA_CHECK(cudaGetLastError());
-        
-        // Phase 3: Propagate pending emissions (from delayed rules)
+        // --- 3. Synapse Data ---
         if (num_synapses > 0) {
-            propagatePendingEmissionsKernel<<<synapse_grid_size, BLOCK_SIZE>>>(
-                d_neurons, d_synapses);
-            CUDA_CHECK(cudaGetLastError());
-            
-            clearPendingEmissionsKernel<<<neuron_grid_size, BLOCK_SIZE>>>(d_neurons);
-            CUDA_CHECK(cudaGetLastError());
+            std::vector<int> h_src(num_synapses), h_dest(num_synapses), h_w(num_synapses);
+            for(int i=0; i<num_synapses; ++i) {
+                h_src[i] = config.synapses[i].source_id;
+                h_dest[i] = config.synapses[i].dest_id;
+                h_w[i] = config.synapses[i].weight;
+            }
+            CUDA_CHECK(cudaMemcpy(d_synapses.source_id, h_src.data(), num_synapses * sizeof(int), cudaMemcpyHostToDevice));
+            CUDA_CHECK(cudaMemcpy(d_synapses.dest_id, h_dest.data(), num_synapses * sizeof(int), cudaMemcpyHostToDevice));
+            CUDA_CHECK(cudaMemcpy(d_synapses.weight, h_w.data(), num_synapses * sizeof(int), cudaMemcpyHostToDevice));
         }
-        
-        // Phase 4: Propagate immediate spike production
-        if (num_synapses > 0) {
-            propagateImmediateSpikesKernel<<<synapse_grid_size, BLOCK_SIZE>>>(
-                d_neurons, d_synapses);
-            CUDA_CHECK(cudaGetLastError());
-        }
-        
-        // Phase 5: Clear spike production buffer
-        clearSpikeProductionKernel<<<neuron_grid_size, BLOCK_SIZE>>>(d_neurons);
-        CUDA_CHECK(cudaGetLastError());
-        
-        // Wait for all kernels to complete
-        CUDA_CHECK(cudaDeviceSynchronize());
-        
-        auto kernel_end = std::chrono::high_resolution_clock::now();
-        std::chrono::duration<double, std::milli> kernel_elapsed = kernel_end - kernel_start;
-        total_kernel_time_ms += kernel_elapsed.count();
     }
 };
 
-// Factory function implementation
 std::unique_ptr<ISnpSimulator> createCudaSimulator() {
     return std::make_unique<CudaSnpSimulator>();
 }

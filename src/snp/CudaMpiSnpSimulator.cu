@@ -363,6 +363,7 @@ private:
     // Performance Metrics
     double compute_time = 0.0;
     double comm_time = 0.0;
+    double memory_transfer_time = 0.0;
     int steps = 0;
 
     std::unique_ptr<IPartitioner> partitioner;
@@ -492,6 +493,8 @@ public:
             compute_time += std::chrono::duration<double, std::milli>(t2 - t1).count();
 
             // --- Phase 2: Communication (Hybrid) ---
+            auto mem_start = std::chrono::high_resolution_clock::now();
+            
             // 1. Download Export Buffers
             if (total_export_size > 0) {
                 // In a production system, we would use pinned memory or CUDA-aware MPI. 
@@ -510,8 +513,12 @@ public:
                     }
                 }
             }
+            
+            auto mem_d2h_end = std::chrono::high_resolution_clock::now();
+            memory_transfer_time += std::chrono::duration<double, std::milli>(mem_d2h_end - mem_start).count();
 
             // 2. MPI Exchange
+            auto mpi_start = std::chrono::high_resolution_clock::now();
             std::vector<MPI_Request> requests;
             for (int r = 0; r < mpi_size; ++r) {
                 if (r == mpi_rank) continue;
@@ -534,8 +541,13 @@ public:
             if (!requests.empty()) {
                 MPI_Waitall(requests.size(), requests.data(), MPI_STATUSES_IGNORE);
             }
+            
+            auto mpi_end = std::chrono::high_resolution_clock::now();
+            auto comm_time_this_step = std::chrono::duration<double, std::milli>(mpi_end - mpi_start).count();
 
             // 3. Upload Import Buffers
+            auto mem_h2d_start = std::chrono::high_resolution_clock::now();
+            
             if (total_import_size > 0) {
                 std::vector<int> h_all_imports(total_import_size);
                 
@@ -551,9 +563,12 @@ public:
                 
                 CUDA_CHECK(cudaMemcpy(d_import_buffer, h_all_imports.data(), total_import_size * sizeof(int), cudaMemcpyHostToDevice));
             }
+            
+            auto mem_h2d_end = std::chrono::high_resolution_clock::now();
+            memory_transfer_time += std::chrono::duration<double, std::milli>(mem_h2d_end - mem_h2d_start).count();
 
             auto t3 = std::chrono::high_resolution_clock::now();
-            comm_time += std::chrono::duration<double, std::milli>(t3 - t2).count();
+            comm_time += comm_time_this_step;
 
             // --- Phase 3: Apply Imports & Cleanup (Device) ---
             if (local_num_neurons > 0) {
@@ -616,6 +631,7 @@ public:
         }
         compute_time = 0;
         comm_time = 0;
+        memory_transfer_time = 0;
         steps = 0;
     }
 
@@ -629,6 +645,9 @@ public:
         
         // CUDA metrics
         metrics.cuda.kernel_time_ms = compute_time; // Most of compute is kernel time
+        metrics.cuda.memory_transfer_time_ms = memory_transfer_time;
+        metrics.cuda.device_to_host_time_ms = memory_transfer_time * 0.5; // Approximate split
+        metrics.cuda.host_to_device_time_ms = memory_transfer_time * 0.5; // Approximate split
         
         // MPI metrics with detailed communication data
         metrics.mpi.communication_time_ms = comm_time;

@@ -291,6 +291,7 @@ private:
     double total_time_ms = 0;
     double mpi_time_ms = 0;
     double compute_time_ms = 0;
+    int steps_executed = 0;
 
 public:
     NaiveCudaMpiSnpSimulator() {
@@ -386,6 +387,8 @@ public:
     }
 
     void step(int steps = 1) override {
+        auto step_start = std::chrono::high_resolution_clock::now();
+        
         for (int k = 0; k < steps; ++k) {
             auto t0 = std::chrono::high_resolution_clock::now();
 
@@ -441,7 +444,11 @@ public:
             compute_time_ms += std::chrono::duration<double, std::milli>(t1 - t0).count(); // P1
             compute_time_ms += std::chrono::duration<double, std::milli>(t3 - t2).count(); // P3
             mpi_time_ms     += std::chrono::duration<double, std::milli>(t2 - t1).count(); // P2
+            steps_executed++;
         }
+        
+        auto step_end = std::chrono::high_resolution_clock::now();
+        total_time_ms += std::chrono::duration<double, std::milli>(step_end - step_start).count();
     }
 
     std::vector<int> getGlobalState() const override {
@@ -493,8 +500,8 @@ public:
         PerformanceMetrics metrics;
         
         // Core metrics
-        metrics.steps_executed = 0; // This would need to be tracked
-        metrics.total_time_ms = compute_time_ms + mpi_time_ms;
+        metrics.steps_executed = steps_executed;
+        metrics.total_time_ms = total_time_ms;
         metrics.compute_time_ms = compute_time_ms;
         
         // MPI metrics

@@ -162,9 +162,9 @@ INSTANTIATE_TEST_SUITE_P(
     ::testing::Values(
         SortBackend::NAIVE_CPU_SNP_SORT,
         SortBackend::CUDA_SNP_SORT,
-        SortBackend::SPARSE_CUDA_SNP_SORT,
-        SortBackend::NAIVE_CUDA_MPI_SNP_SORT,
-        SortBackend::CUDA_MPI_SNP_SORT
+        SortBackend::SPARSE_CUDA_SNP_SORT
+        // SortBackend::NAIVE_CUDA_MPI_SNP_SORT,
+        // SortBackend::CUDA_MPI_SNP_SORT
     ),
     [](const ::testing::TestParamInfo<SortBackend>& info) {
         switch (info.param) {

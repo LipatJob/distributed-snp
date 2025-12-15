@@ -250,28 +250,32 @@ void RegisterSimulator(std::string name, SorterFactory factory, const std::vecto
 namespace Suites {
     using namespace BenchUtils;
 
+    const int tinySize = 16;
     const std::vector<TestConfig> Tiny = {
-        {"Tiny_Sort", 10, 10, Distribution::SORTED, 1},
-        {"Tiny_RevSort", 10, 10, Distribution::REVERSE_SORTED, 1},
-        {"Tiny_Rand", 10, 10, Distribution::RANDOM, 1},
+        {"Tiny_Sort", tinySize, tinySize, Distribution::SORTED, 64},
+        {"Tiny_RevSort", tinySize, tinySize, Distribution::REVERSE_SORTED, 64},
+        {"Tiny_Rand", tinySize, tinySize, Distribution::RANDOM, 64},
     };
 
+    const int smallSize = 256;
     const std::vector<TestConfig> Small = {
-        {"Small_Sort", 100, 100, Distribution::SORTED, 25},
-        {"Small_RevSort", 100, 100, Distribution::REVERSE_SORTED, 25},
-        {"Small_Rand", 100, 100, Distribution::RANDOM, 25},
+        {"Small_Sort", smallSize, smallSize, Distribution::SORTED, 32},
+        {"Small_RevSort", smallSize, smallSize, Distribution::REVERSE_SORTED, 32},
+        {"Small_Rand", smallSize, smallSize, Distribution::RANDOM, 32},
     };
 
+    const int mediumSize = 2048;
     const std::vector<TestConfig> Medium = {
-        {"Medium_Sort", 1000, 1000, Distribution::SORTED, 5},
-        {"Medium_RevSort", 1000, 1000, Distribution::REVERSE_SORTED, 5},
-        {"Medium_Rand", 1000, 1000, Distribution::RANDOM, 5},
+        {"Medium_Sort", mediumSize, mediumSize, Distribution::SORTED, 16},
+        {"Medium_RevSort", mediumSize, mediumSize, Distribution::REVERSE_SORTED, 16},
+        {"Medium_Rand", mediumSize, mediumSize, Distribution::RANDOM, 16},
     };
 
+    const int largeSize = 8192;
     const std::vector<TestConfig> Large = {
-        {"Large_Sort", 5000, 5000, Distribution::SORTED, 5},
-        {"Large_RevSort", 5000, 5000, Distribution::REVERSE_SORTED, 5},
-        {"Large_Rand", 5000, 5000, Distribution::RANDOM, 5},
+        {"Large_Sort", largeSize, largeSize, Distribution::SORTED, 4},
+        {"Large_RevSort", largeSize, largeSize, Distribution::REVERSE_SORTED, 4},
+        {"Large_Rand", largeSize, largeSize, Distribution::RANDOM, 4},
     };
     
     // Combine vectors helper
@@ -297,7 +301,6 @@ int main(int argc, char** argv) {
     
     // 1. CPU
     RegisterSimulator("CpuSnp", createNaiveCpuSnpSort, Suites::Small);
-    RegisterSimulator("CpuSnp", createNaiveCpuSnpSort, Suites::Medium);
 
     // 2. CUDA
     RegisterSimulator("CudaSnp", createCudaSnpSort, Suites::Small);
@@ -314,16 +317,12 @@ int main(int argc, char** argv) {
                       { return createNaiveCudaMpiSnpSort(); }, Suites::Medium);
 
     // 5. CUDA/MPI (Linear - Default)
-    RegisterSimulator("CudaMpiSnp", []()
-                      { return createCudaMpiSnpSort(PartitionerType::LINEAR); }, Suites::Tiny);
-    RegisterSimulator("CudaMpiSnp", []()
+    RegisterSimulator("CudaMpiSnp_Linear", []()
                       { return createCudaMpiSnpSort(PartitionerType::LINEAR); }, Suites::Small);
-    RegisterSimulator("CudaMpiSnp", []()
+    RegisterSimulator("CudaMpiSnp_Linear", []()
                       { return createCudaMpiSnpSort(PartitionerType::LINEAR); }, Suites::Medium);
 
     // 5b. CUDA/MPI (Louvain)
-    RegisterSimulator("CudaMpiSnp_Louvain", []()
-                      { return createCudaMpiSnpSort(PartitionerType::LOUVAIN); }, Suites::Tiny);
     RegisterSimulator("CudaMpiSnp_Louvain", []()
                       { return createCudaMpiSnpSort(PartitionerType::LOUVAIN); }, Suites::Small);
     RegisterSimulator("CudaMpiSnp_Louvain", []()
