@@ -76,7 +76,8 @@ struct DeviceNeuronRuleMap {
  * A matrix of size (Z x q), where Z is the max output degree and q is number of neurons.
  * Sy_Pi[row, col] stores the destination neuron ID for the synapse.
  * -1 (or -2 in paper) represents null/padding.
- * Stored in Column-Major order to allow threads (neurons) to iterate their synapses efficiently.
+ * Stored in Column-Major order (Interleaved) to allow threads (neurons) to iterate their synapses efficiently.
+ * Layout: matrix[i * num_neurons + nid] where i is the synapse index (0..Z-1) and nid is the neuron ID.
  */
 struct DeviceSynapseMatrix {
     int* matrix; // Flattened Z * q (destination IDs)
@@ -211,13 +212,16 @@ __global__ void k_step_compressed(
         } else {
             // No delay: send spikes immediately
             for (int i = 0; i < max_out_degree; ++i) {
-                int dest_nid = synapse_matrix[nid * max_out_degree + i];
+                // Coalesced access: matrix[i * num_neurons + nid]
+                int dest_nid = synapse_matrix[i * num_neurons + nid];
                 if (dest_nid >= 0) {
-                    int weight = synapse_weights[nid * max_out_degree + i];
+                    int weight = synapse_weights[i * num_neurons + nid];
                     if (delay_vector[dest_nid] == 0) {
                         atomicAdd(&config[dest_nid], produced * weight);
                     }
                 } else {
+                    // If we hit padding, we can stop if we assume padding is at the end.
+                    // However, to be safe and match reference logic (which breaks on -1), we break.
                     break;
                 }
             }
@@ -249,12 +253,13 @@ __global__ void k_update_delays(
         if (delay_vector[nid] == 0 && pending_emission[nid] > 0) {
             int produced = pending_emission[nid];
             pending_emission[nid] = 0; // Clear pending
-            
-            // Send to all connected neurons
-            for (int i = 0; i < max_out_degree; ++i) {
-                int dest_nid = synapse_matrix[nid * max_out_degree + i];
+
+            for (int i = 0; i < max_out_degree; ++i)
+            {
+                // Coalesced access: matrix[i * num_neurons + nid]
+                int dest_nid = synapse_matrix[i * num_neurons + nid];
                 if (dest_nid >= 0) {
-                    int weight = synapse_weights[nid * max_out_degree + i];
+                    int weight = synapse_weights[i * num_neurons + nid];
                     if (delay_vector[dest_nid] == 0) {
                         atomicAdd(&config[dest_nid], produced * weight);
                     }
@@ -381,10 +386,11 @@ public:
                 int dst = syn.dest_id;
                 int weight = syn.weight;
                 int row_idx = current_col_fill[src];
-                
-                // Store at: matrix[src * max_out_degree + row_idx]
-                h_synapse_matrix[src * max_out_degree + row_idx] = dst;
-                h_synapse_weights[src * max_out_degree + row_idx] = weight;
+
+                // This ensures that when all threads (neurons) access the k-th synapse (row_idx=k),
+                // they access adjacent memory locations: [k*N, k*N+1, k*N+2...]
+                h_synapse_matrix[row_idx * num_neurons + src] = dst;
+                h_synapse_weights[row_idx * num_neurons + src] = weight;
                 current_col_fill[src]++;
             }
 
