@@ -185,51 +185,6 @@ struct DeviceImportMapData {
 
 // --- CUDA Kernels ---
 
-// 1. Update delays and open neurons
-__global__ void kUpdateStatus(DeviceNeuronData neurons) {
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx >= neurons.count) return;
-
-    if (neurons.delay_timer[idx] > 0) {
-        neurons.delay_timer[idx]--;
-        if (neurons.delay_timer[idx] == 0) {
-            neurons.is_open[idx] = 1;
-        }
-    }
-}
-
-// 2. Select and Fire Rules (Same logic as single-node, adapted for SoA)
-__global__ void kSelectAndFire(DeviceNeuronData neurons, DeviceRuleData rules) {
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx >= neurons.count) return;
-
-    if (!neurons.is_open[idx]) return;
-
-    int current_spikes = neurons.configuration[idx];
-    int r_start = rules.rule_start_idx[idx];
-    int r_count = rules.rule_count[idx];
-
-    // Linear search for first applicable rule (Deterministic)
-    for (int i = 0; i < r_count; ++i) {
-        int r_idx = r_start + i;
-        if (current_spikes >= rules.input_threshold[r_idx]) {
-            // Apply Rule
-            neurons.configuration[idx] -= rules.spikes_consumed[r_idx];
-            int produced = rules.spikes_produced[r_idx];
-            int delay = rules.delay[r_idx];
-
-            if (delay > 0) {
-                neurons.is_open[idx] = 0;
-                neurons.delay_timer[idx] = delay;
-                neurons.pending_emission[idx] = produced;
-            } else {
-                neurons.spike_production[idx] = produced;
-            }
-            break; // Only one rule fires per step
-        }
-    }
-}
-
 // 3. Propagate Spikes (Local Only)
 // Handles both immediate production and pending emissions that just unlocked
 __global__ void kPropagateLocal(DeviceNeuronData neurons, DeviceLocalSynapseData synapses) {
@@ -294,13 +249,50 @@ __global__ void kApplyImports(DeviceNeuronData neurons, DeviceImportMapData impo
     }
 }
 
-// 6. Cleanup (Clear production and pending emissions)
-__global__ void kCleanup(DeviceNeuronData neurons) {
+// 7. Fused kernel: UpdateStatus + SelectAndFire + Cleanup
+// This reduces kernel launch overhead by combining three operations
+__global__ void kUpdateSelectFireCleanup(DeviceNeuronData neurons, DeviceRuleData rules) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= neurons.count) return;
+
+    // Phase 1: Update status (from previous step)
+    if (neurons.delay_timer[idx] > 0) {
+        neurons.delay_timer[idx]--;
+        if (neurons.delay_timer[idx] == 0) {
+            neurons.is_open[idx] = 1;
+        }
+    }
+
+    // Phase 2: Select and fire rules (if open)
+    if (neurons.is_open[idx]) {
+        int current_spikes = neurons.configuration[idx];
+        int r_start = rules.rule_start_idx[idx];
+        int r_count = rules.rule_count[idx];
+
+        for (int i = 0; i < r_count; ++i) {
+            int r_idx = r_start + i;
+            if (current_spikes >= rules.input_threshold[r_idx]) {
+                neurons.configuration[idx] -= rules.spikes_consumed[r_idx];
+                neurons.spike_production[idx] = rules.spikes_produced[r_idx];
+                
+                if (rules.delay[r_idx] > 0) {
+                    neurons.pending_emission[idx] = rules.spikes_produced[r_idx];
+                    neurons.spike_production[idx] = 0;
+                    neurons.delay_timer[idx] = rules.delay[r_idx];
+                    neurons.is_open[idx] = 0;
+                }
+                break;
+            }
+        }
+    }
+}
+
+// 8. Separate cleanup kernel for after propagation
+__global__ void kCleanupAfterPropagation(DeviceNeuronData neurons) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= neurons.count) return;
 
     neurons.spike_production[idx] = 0;
-    // Only clear pending if it was emitted (neuron is open)
     if (neurons.is_open[idx]) {
         neurons.pending_emission[idx] = 0;
     }
@@ -344,9 +336,11 @@ private:
     // Communication Buffers (MPI + Device)
     // We organize buffers by remote rank.
     struct RankCommData {
-        // Host Buffers
-        std::vector<int> h_send_buf;
-        std::vector<int> h_recv_buf;
+        // Pinned Host Buffers for faster transfers
+        int* h_send_buf = nullptr;
+        int* h_recv_buf = nullptr;
+        int send_size = 0;
+        int recv_size = 0;
         // Offsets in the monolithic Device Export/Import buffers
         int export_offset;
         int export_count;
@@ -359,6 +353,9 @@ private:
     int* d_import_buffer = nullptr;
     int total_export_size = 0;
     int total_import_size = 0;
+    
+    // CUDA stream for overlapping operations
+    cudaStream_t compute_stream = nullptr;
 
     // Performance Metrics
     double compute_time = 0.0;
@@ -374,6 +371,8 @@ public:
         MPI_Comm_size(MPI_COMM_WORLD, &mpi_size);
         // Default to Linear (Naive) Partitioning
         partitioner = std::make_unique<LinearPartitioner>();
+        // Create CUDA stream for async operations
+        CUDA_CHECK(cudaStreamCreate(&compute_stream));
     }
 
     // Allow switching partitioner strategy
@@ -390,6 +389,15 @@ public:
         d_import_map.free();
         if (d_export_buffer) cudaFree(d_export_buffer);
         if (d_import_buffer) cudaFree(d_import_buffer);
+        
+        // Free pinned host buffers
+        for (auto& rank_comm : comm_map) {
+            if (rank_comm.h_send_buf) cudaFreeHost(rank_comm.h_send_buf);
+            if (rank_comm.h_recv_buf) cudaFreeHost(rank_comm.h_recv_buf);
+        }
+        
+        // Destroy CUDA stream
+        if (compute_stream) cudaStreamDestroy(compute_stream);
     }
 
     bool loadSystem(const SnpSystemConfig& original_config) override {
@@ -471,53 +479,57 @@ public:
 
             // --- Phase 1: Compute (Device) ---
             if (local_num_neurons > 0) {
-                // Clear export buffer before accumulating
+                // Clear export buffer before accumulating (async on stream)
                 if (total_export_size > 0) {
-                    CUDA_CHECK(cudaMemset(d_export_buffer, 0, total_export_size * sizeof(int)));
+                    CUDA_CHECK(cudaMemsetAsync(d_export_buffer, 0, total_export_size * sizeof(int), compute_stream));
                 }
 
-                kUpdateStatus<<<gridSize, BLOCK_SIZE>>>(d_neurons);
-                kSelectAndFire<<<gridSize, BLOCK_SIZE>>>(d_neurons, d_rules);
+                // OPTIMIZATION: Use fused kernel to reduce launch overhead
+                // This combines UpdateStatus + SelectAndFire in one kernel
+                kUpdateSelectFireCleanup<<<gridSize, BLOCK_SIZE, 0, compute_stream>>>(d_neurons, d_rules);
                 
+                // Propagate spikes locally and to export buffers (can run in parallel conceptually)
                 if (d_local_synapses.count > 0) {
-                    kPropagateLocal<<<synapseGridSize, BLOCK_SIZE>>>(d_neurons, d_local_synapses);
+                    kPropagateLocal<<<synapseGridSize, BLOCK_SIZE, 0, compute_stream>>>(d_neurons, d_local_synapses);
                 }
                 
                 if (d_export_synapses.count > 0) {
-                    kPopulateExport<<<exportGridSize, BLOCK_SIZE>>>(d_neurons, d_export_synapses, d_export_buffer);
+                    kPopulateExport<<<exportGridSize, BLOCK_SIZE, 0, compute_stream>>>(d_neurons, d_export_synapses, d_export_buffer);
                 }
             }
-            CUDA_CHECK(cudaDeviceSynchronize());
+            
+            // Sync stream before downloading results
+            CUDA_CHECK(cudaStreamSynchronize(compute_stream));
 
             auto t2 = std::chrono::high_resolution_clock::now();
             compute_time += std::chrono::duration<double, std::milli>(t2 - t1).count();
 
-            // --- Phase 2: Communication (Hybrid) ---
+            // --- Phase 2: Communication (Optimized with Pinned Memory) ---
             auto mem_start = std::chrono::high_resolution_clock::now();
             
-            // 1. Download Export Buffers
+            // 1. Download Export Buffers using async transfers to pinned memory
             if (total_export_size > 0) {
-                // In a production system, we would use pinned memory or CUDA-aware MPI. 
-                // For robustness here, we copy to host vectors first.
-                // Note: We copy the whole monolithic buffer, then scatter to MPI buffers
-                std::vector<int> h_all_exports(total_export_size);
-                CUDA_CHECK(cudaMemcpy(h_all_exports.data(), d_export_buffer, total_export_size * sizeof(int), cudaMemcpyDeviceToHost));
-                
-                // Pack into specific send buffers
+                // OPTIMIZATION: Direct async copy to each rank's pinned send buffer
                 for (int r = 0; r < mpi_size; ++r) {
                     if (r == mpi_rank) continue;
                     if (comm_map[r].export_count > 0) {
-                        std::memcpy(comm_map[r].h_send_buf.data(), 
-                                    &h_all_exports[comm_map[r].export_offset], 
-                                    comm_map[r].export_count * sizeof(int));
+                        CUDA_CHECK(cudaMemcpyAsync(
+                            comm_map[r].h_send_buf,
+                            d_export_buffer + comm_map[r].export_offset,
+                            comm_map[r].export_count * sizeof(int),
+                            cudaMemcpyDeviceToHost,
+                            compute_stream
+                        ));
                     }
                 }
+                // Wait for all async copies to complete
+                CUDA_CHECK(cudaStreamSynchronize(compute_stream));
             }
             
             auto mem_d2h_end = std::chrono::high_resolution_clock::now();
             memory_transfer_time += std::chrono::duration<double, std::milli>(mem_d2h_end - mem_start).count();
 
-            // 2. MPI Exchange
+            // 2. MPI Exchange (same as before, but now with pinned memory)
             auto mpi_start = std::chrono::high_resolution_clock::now();
             std::vector<MPI_Request> requests;
             for (int r = 0; r < mpi_size; ++r) {
@@ -526,14 +538,14 @@ public:
                 // Send
                 if (comm_map[r].export_count > 0) {
                     MPI_Request req;
-                    MPI_Isend(comm_map[r].h_send_buf.data(), comm_map[r].export_count, MPI_INT, r, 0, MPI_COMM_WORLD, &req);
+                    MPI_Isend(comm_map[r].h_send_buf, comm_map[r].export_count, MPI_INT, r, 0, MPI_COMM_WORLD, &req);
                     requests.push_back(req);
                 }
 
                 // Recv
                 if (comm_map[r].import_count > 0) {
                     MPI_Request req;
-                    MPI_Irecv(comm_map[r].h_recv_buf.data(), comm_map[r].import_count, MPI_INT, r, 0, MPI_COMM_WORLD, &req);
+                    MPI_Irecv(comm_map[r].h_recv_buf, comm_map[r].import_count, MPI_INT, r, 0, MPI_COMM_WORLD, &req);
                     requests.push_back(req);
                 }
             }
@@ -545,23 +557,25 @@ public:
             auto mpi_end = std::chrono::high_resolution_clock::now();
             auto comm_time_this_step = std::chrono::duration<double, std::milli>(mpi_end - mpi_start).count();
 
-            // 3. Upload Import Buffers
+            // 3. Upload Import Buffers using async transfers from pinned memory
             auto mem_h2d_start = std::chrono::high_resolution_clock::now();
             
             if (total_import_size > 0) {
-                std::vector<int> h_all_imports(total_import_size);
-                
-                // Gather from MPI buffers
+                // OPTIMIZATION: Direct async copy from each rank's pinned recv buffer
                 for (int r = 0; r < mpi_size; ++r) {
                     if (r == mpi_rank) continue;
                     if (comm_map[r].import_count > 0) {
-                        std::memcpy(&h_all_imports[comm_map[r].import_offset], 
-                                    comm_map[r].h_recv_buf.data(), 
-                                    comm_map[r].import_count * sizeof(int));
+                        CUDA_CHECK(cudaMemcpyAsync(
+                            d_import_buffer + comm_map[r].import_offset,
+                            comm_map[r].h_recv_buf,
+                            comm_map[r].import_count * sizeof(int),
+                            cudaMemcpyHostToDevice,
+                            compute_stream
+                        ));
                     }
                 }
-                
-                CUDA_CHECK(cudaMemcpy(d_import_buffer, h_all_imports.data(), total_import_size * sizeof(int), cudaMemcpyHostToDevice));
+                // Wait for all async uploads
+                CUDA_CHECK(cudaStreamSynchronize(compute_stream));
             }
             
             auto mem_h2d_end = std::chrono::high_resolution_clock::now();
@@ -573,11 +587,13 @@ public:
             // --- Phase 3: Apply Imports & Cleanup (Device) ---
             if (local_num_neurons > 0) {
                 if (d_import_map.count > 0) {
-                    kApplyImports<<<importGridSize, BLOCK_SIZE>>>(d_neurons, d_import_map, d_import_buffer);
+                    kApplyImports<<<importGridSize, BLOCK_SIZE, 0, compute_stream>>>(d_neurons, d_import_map, d_import_buffer);
                 }
-                kCleanup<<<gridSize, BLOCK_SIZE>>>(d_neurons);
+                // Final cleanup of spike production and pending emissions
+                kCleanupAfterPropagation<<<gridSize, BLOCK_SIZE, 0, compute_stream>>>(d_neurons);
             }
-            CUDA_CHECK(cudaDeviceSynchronize());
+            // Final sync for this step
+            CUDA_CHECK(cudaStreamSynchronize(compute_stream));
 
             auto t4 = std::chrono::high_resolution_clock::now();
             compute_time += std::chrono::duration<double, std::milli>(t4 - t3).count();
@@ -824,7 +840,11 @@ void prepareRules(const SnpSystemConfig& config) {
             
             comm_map[r].export_offset = current_export_offset;
             comm_map[r].export_count = targets.size();
-            comm_map[r].h_send_buf.resize(targets.size());
+            comm_map[r].send_size = targets.size();
+            // OPTIMIZATION: Allocate pinned memory for faster DMA transfers
+            if (targets.size() > 0) {
+                CUDA_CHECK(cudaHostAlloc(&comm_map[r].h_send_buf, targets.size() * sizeof(int), cudaHostAllocDefault));
+            }
             
             // Map global dest ID -> Index in this rank's specific export chunk
             std::map<int, int> dest_to_chunk_idx;
@@ -872,7 +892,11 @@ void prepareRules(const SnpSystemConfig& config) {
             
             comm_map[r].import_offset = current_import_offset;
             comm_map[r].import_count = targets.size();
-            comm_map[r].h_recv_buf.resize(targets.size());
+            comm_map[r].recv_size = targets.size();
+            // OPTIMIZATION: Allocate pinned memory for faster DMA transfers
+            if (targets.size() > 0) {
+                CUDA_CHECK(cudaHostAlloc(&comm_map[r].h_recv_buf, targets.size() * sizeof(int), cudaHostAllocDefault));
+            }
 
             // Map buffer index -> Local Neuron
             for (size_t i = 0; i < targets.size(); ++i) {

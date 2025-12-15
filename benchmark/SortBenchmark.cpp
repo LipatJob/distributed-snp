@@ -70,7 +70,7 @@ namespace BenchUtils {
                 std::sort(data.begin(), data.end(), std::greater<int>());
                 break;
             case Distribution::UNIFORM:
-                std::fill(data.begin(), data.end(), valDist(rng));
+                std::fill(data.begin(), data.end(), maxValue);
                 break;
             case Distribution::NEARLY_SORTED:
                 for(auto& x : data) x = valDist(rng);

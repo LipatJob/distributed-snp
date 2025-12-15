@@ -14,30 +14,21 @@ Creates:
 import json
 import sys
 import pandas as pd
-import numpy as np
-import matplotlib.pyplot as plt
-import matplotlib
-matplotlib.use('Agg')  # Non-interactive backend
-import seaborn as sns
 from pathlib import Path
 from datetime import datetime
+import generate_visualizations as viz
+import generate_visualizations as viz
 
-# Set plotting style
-sns.set_style("whitegrid")
-plt.rcParams['figure.figsize'] = (14, 8)
-plt.rcParams['font.size'] = 10
-
-# Configuration: Add new implementations here
+# Implementation metadata for report generation
 IMPLEMENTATIONS = {
-    'CpuSnp': {'color': '#1f77b4', 'has_mpi': False, 'label': 'CPU'},
-    'CudaSnp': {'color': '#ff7f0e', 'has_mpi': False, 'label': 'CUDA'},
-    'SparseCudaSnp': {'color': '#2ca02c', 'has_mpi': False, 'label': 'Sparse CUDA'},
-    'NaiveCudaMpiSnp': {'color': '#d62728', 'has_mpi': True, 'label': 'Naive CUDA+MPI'},
-    'CudaMpiSnp_Linear': {'color': '#9467bd', 'has_mpi': True, 'label': 'CUDA+MPI (Linear)'},
-    'CudaMpiSnp_Louvain': {'color': '#8c564b', 'has_mpi': True, 'label': 'CUDA+MPI (Louvain)'},
-    'CudaMpiSnp_RedBlue': {'color': '#e377c2', 'has_mpi': True, 'label': 'CUDA+MPI (RedBlue)'},
+    'CpuSnp': {'label': 'CPU', 'has_mpi': False},
+    'CudaSnp': {'label': 'CUDA', 'has_mpi': False},
+    'SparseCudaSnp': {'label': 'Sparse CUDA', 'has_mpi': False},
+    'NaiveCudaMpiSnp': {'label': 'Naive CUDA+MPI', 'has_mpi': True},
+    'CudaMpiSnp_Linear': {'label': 'CUDA+MPI (Linear)', 'has_mpi': True},
+    'CudaMpiSnp_Louvain': {'label': 'CUDA+MPI (Louvain)', 'has_mpi': True},
+    'CudaMpiSnp_RedBlue': {'label': 'CUDA+MPI (RedBlue)', 'has_mpi': True},
 }
-
 
 def load_benchmark_data(json_path):
     """Load and parse benchmark JSON file."""
@@ -170,160 +161,6 @@ def generate_table(df, context):
     lines.append("=" * 100)
     return "\n".join(lines)
 
-
-def create_time_comparison_plot(df, output_path):
-    """Create time comparison plots."""
-    available_implementations = [impl for impl in IMPLEMENTATIONS.keys() 
-                                if impl in df['Implementation'].values]
-    
-    patterns = sorted(df['Pattern'].unique())
-    fig, axes = plt.subplots(1, len(patterns), figsize=(6*len(patterns), 6))
-    if len(patterns) == 1:
-        axes = [axes]
-    
-    for idx, pattern in enumerate(patterns):
-        ax = axes[idx]
-        pattern_df = df[df['Pattern'] == pattern]
-        
-        x_pos = np.arange(len(pattern_df['Size'].unique()))
-        width = 0.8 / len(available_implementations)
-        
-        for i, impl in enumerate(available_implementations):
-            impl_df = pattern_df[pattern_df['Implementation'] == impl].sort_values('Size')
-            
-            if len(impl_df) == 0:
-                continue
-            
-            config = IMPLEMENTATIONS[impl]
-            
-            if config['has_mpi']:
-                # Stack computation and communication time
-                comp = impl_df['comp_time'].values
-                comm = impl_df['comm_time'].values
-                
-                ax.bar(x_pos + i*width, comm, width,
-                      label=f"{config['label']} (Comm)",
-                      color=config['color'], alpha=0.4, hatch='//')
-                ax.bar(x_pos + i*width, comp, width, bottom=comm, 
-                      label=f"{config['label']} (Comp)",
-                      color=config['color'], alpha=0.8)
-            else:
-                times = impl_df['real_time'].values
-                ax.bar(x_pos + i*width, times, width,
-                      label=config['label'],
-                      color=config['color'], alpha=0.8)
-        
-        ax.set_xlabel('Problem Size', fontsize=12, fontweight='bold')
-        ax.set_ylabel('Time (ms)', fontsize=12, fontweight='bold')
-        ax.set_title(f'{pattern} Data', fontsize=14, fontweight='bold')
-        ax.set_xticks(x_pos + width * (len(available_implementations) - 1) / 2)
-        ax.set_xticklabels(sorted(pattern_df['Size'].unique()))
-        ax.legend(fontsize=8)
-        ax.grid(axis='y', alpha=0.3)
-    
-    plt.tight_layout()
-    plt.savefig(output_path, dpi=150, bbox_inches='tight')
-    plt.close()
-
-
-def create_speedup_plot(df, baseline, output_path):
-    """Create speedup comparison plot."""
-    available_implementations = [impl for impl in IMPLEMENTATIONS.keys() 
-                                if impl in df['Implementation'].values]
-    
-    if baseline not in available_implementations:
-        print(f"Warning: Baseline '{baseline}' not found, skipping speedup plot")
-        return
-    
-    if len(available_implementations) < 2:
-        print("Warning: Need at least 2 implementations for speedup plot")
-        return
-    
-    patterns = sorted(df['Pattern'].unique())
-    fig, axes = plt.subplots(1, len(patterns), figsize=(6*len(patterns), 6))
-    if len(patterns) == 1:
-        axes = [axes]
-    
-    for idx, pattern in enumerate(patterns):
-        ax = axes[idx]
-        pattern_df = df[df['Pattern'] == pattern]
-        
-        baseline_df = pattern_df[pattern_df['Implementation'] == baseline][['Size', 'real_time']]
-        baseline_df = baseline_df.rename(columns={'real_time': 'baseline_time'})
-        
-        for impl in available_implementations:
-            if impl == baseline:
-                continue
-            
-            impl_df = pattern_df[pattern_df['Implementation'] == impl][['Size', 'real_time']]
-            if len(impl_df) == 0:
-                continue
-                
-            merged = impl_df.merge(baseline_df, on='Size')
-            merged['speedup'] = merged['baseline_time'] / merged['real_time']
-            
-            config = IMPLEMENTATIONS[impl]
-            ax.plot(merged['Size'], merged['speedup'], 
-                   marker='o', linewidth=2, markersize=8,
-                   label=config['label'], color=config['color'])
-        
-        ax.axhline(y=1.0, color='black', linestyle='--', alpha=0.5, label='Baseline')
-        ax.set_xlabel('Problem Size', fontsize=12, fontweight='bold')
-        ax.set_ylabel(f'Speedup vs {IMPLEMENTATIONS[baseline]["label"]}', fontsize=12, fontweight='bold')
-        ax.set_title(f'{pattern} Data', fontsize=14, fontweight='bold')
-        ax.set_xscale('log')
-        ax.legend(fontsize=8)
-        ax.grid(True, alpha=0.3)
-    
-    plt.tight_layout()
-    plt.savefig(output_path, dpi=150, bbox_inches='tight')
-    plt.close()
-
-
-def create_communication_overhead_plot(df, output_path):
-    """Create communication overhead plot."""
-    mpi_impls = [impl for impl in IMPLEMENTATIONS.keys() 
-                 if IMPLEMENTATIONS[impl]['has_mpi'] and impl in df['Implementation'].values]
-    
-    if not mpi_impls:
-        print("Warning: No MPI implementations found, skipping communication overhead plot")
-        return
-    
-    plot_df = df[df['Implementation'].isin(mpi_impls)].copy()
-    plot_df['comm_percentage'] = (plot_df['comm_time'] / plot_df['cpu_time']) * 100
-    
-    patterns = sorted(plot_df['Pattern'].unique())
-    fig, axes = plt.subplots(1, len(patterns), figsize=(6*len(patterns), 6))
-    if len(patterns) == 1:
-        axes = [axes]
-    
-    for idx, pattern in enumerate(patterns):
-        ax = axes[idx]
-        pattern_df = plot_df[plot_df['Pattern'] == pattern]
-        
-        for impl in mpi_impls:
-            impl_df = pattern_df[pattern_df['Implementation'] == impl].sort_values('Size')
-            if len(impl_df) == 0:
-                continue
-                
-            config = IMPLEMENTATIONS[impl]
-            
-            ax.plot(impl_df['Size'], impl_df['comm_percentage'],
-                   marker='o', linewidth=2, markersize=8,
-                   label=config['label'], color=config['color'])
-        
-        ax.set_xlabel('Problem Size', fontsize=12, fontweight='bold')
-        ax.set_ylabel('Communication Overhead (%)', fontsize=12, fontweight='bold')
-        ax.set_title(f'{pattern} Data', fontsize=14, fontweight='bold')
-        ax.set_xscale('log')
-        ax.legend(fontsize=8)
-        ax.grid(True, alpha=0.3)
-    
-    plt.tight_layout()
-    plt.savefig(output_path, dpi=150, bbox_inches='tight')
-    plt.close()
-
-
 def main():
     if len(sys.argv) < 2:
         print("Usage: python generate_report.py <benchmark_json_file>")
@@ -366,22 +203,7 @@ def main():
     print(f"✓ Saved table: {table_path}")
     
     # Generate visualizations
-    print("Generating visualizations...")
-    
-    print("  - Time comparison plot...")
-    create_time_comparison_plot(df, viz_dir / "time_comparison.png")
-    
-    print("  - Speedup analysis plot...")
-    # Use first available implementation as baseline, prefer CpuSnp
-    available = [impl for impl in IMPLEMENTATIONS.keys() if impl in df['Implementation'].values]
-    baseline = 'CpuSnp' if 'CpuSnp' in available else available[0] if available else None
-    if baseline:
-        create_speedup_plot(df, baseline, viz_dir / "speedup_analysis.png")
-    
-    print("  - Communication overhead plot...")
-    create_communication_overhead_plot(df, viz_dir / "communication_overhead.png")
-    
-    print(f"✓ Saved visualizations: {viz_dir}")
+    viz.generate_all_visualizations(df, viz_dir)
     
     print("")
     print("=" * 80)
