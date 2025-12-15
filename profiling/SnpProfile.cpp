@@ -166,16 +166,32 @@ int main(int argc, char** argv) {
     // Parse command line for specific implementation
     std::string targetImpl = "";
     int numSteps = 0;  // 0 means run to completion
+    PartitionerType partitionerType = PartitionerType::LINEAR; // Default partitioner
+    size_t arraySize = 2048;  // Default array size
+    
     if (argc > 1) {
         targetImpl = argv[1];
     }
     if (argc > 2) {
         numSteps = std::atoi(argv[2]);
     }
+    if (argc > 3) {
+        // Parse partitioner type from command line
+        partitionerType = IPartitioner::parsePartitionerType(argv[3], PartitionerType::LINEAR);
+        if (rank == 0) {
+            std::cout << "Using partitioner: " << IPartitioner::getPartitionerName(partitionerType) << "\n";
+        }
+    }
+    if (argc > 4) {
+        arraySize = std::atoi(argv[4]);
+        if (rank == 0) {
+            std::cout << "Using array size: " << arraySize << "\n";
+        }
+    }
     
-    // Define medium-sized array (similar to benchmark suite)
-    const size_t MEDIUM_SIZE = 2048;
-    const int MEDIUM_MAX = 2048;
+    // Define array parameters
+    const size_t MEDIUM_SIZE = arraySize;
+    const int MEDIUM_MAX = arraySize;
     
     // CPU Implementation
     if (targetImpl.empty() || targetImpl == "cpu" || targetImpl == "all") {
@@ -217,7 +233,7 @@ int main(int argc, char** argv) {
     if (targetImpl.empty() || targetImpl == "naive-cuda-mpi" || targetImpl == "mpi" || targetImpl == "all") {
         profileConfigs.push_back({
             "NaiveCudaMpiSnp",
-            []() { return createNaiveCudaMpiSimulator(PartitionerType::LINEAR); },
+            [partitionerType]() { return createNaiveCudaMpiSimulator(partitionerType); },
             MEDIUM_SIZE,
             MEDIUM_MAX,
             true,  // Requires MPI
@@ -229,7 +245,7 @@ int main(int argc, char** argv) {
     if (targetImpl.empty() || targetImpl == "cuda-mpi" || targetImpl == "mpi" || targetImpl == "all") {
         profileConfigs.push_back({
             "CudaMpiSnp",
-            []() { return createCudaMpiSimulator(PartitionerType::LINEAR); },
+            [partitionerType]() { return createCudaMpiSimulator(partitionerType); },
             MEDIUM_SIZE,
             MEDIUM_MAX,
             true,  // Requires MPI
@@ -253,7 +269,8 @@ int main(int argc, char** argv) {
         
         if (profileConfigs.empty()) {
             std::cout << "\nNo implementations matched filter: '" << targetImpl << "'\n";
-            std::cout << "\nAvailable options:\n";
+            std::cout << "\nUsage: " << argv[0] << " [implementation] [steps] [partitioner] [array_size]\n";
+            std::cout << "\nAvailable implementations:\n";
             std::cout << "  cpu           - Profile CPU implementation only\n";
             std::cout << "  cuda          - Profile CUDA implementation only\n";
             std::cout << "  sparse-cuda   - Profile Sparse CUDA implementation only\n";
@@ -261,7 +278,17 @@ int main(int argc, char** argv) {
             std::cout << "  cuda-mpi      - Profile CUDA+MPI implementation only\n";
             std::cout << "  mpi           - Profile all MPI implementations\n";
             std::cout << "  all           - Profile all implementations\n";
-            std::cout << "  (no arg)      - Profile all implementations\n\n";
+            std::cout << "  (no arg)      - Profile all implementations\n";
+            std::cout << "\nPartitioner options (for MPI implementations):\n";
+            std::cout << "  linear        - Linear (block) partitioning (default)\n";
+            std::cout << "  louvain       - Louvain community detection\n";
+            std::cout << "  red-blue      - Red-Blue pebbling (BFS)\n";
+            std::cout << "\nArray size (default: 2048):\n";
+            std::cout << "  N             - Array size (positive integer)\n\n";
+            std::cout << "\nExamples:\n";
+            std::cout << "  " << argv[0] << " cuda-mpi 100 louvain 4096  # Profile CUDA+MPI with Louvain for 100 steps, array size 4096\n";
+            std::cout << "  " << argv[0] << " mpi 0 red-blue 1024        # Profile all MPI with Red-Blue to completion, array size 1024\n";
+            std::cout << "  " << argv[0] << " cuda 0 linear 8192         # Profile CUDA to completion, array size 8192\n\n";
         }
     }
     

@@ -15,9 +15,17 @@ make profile ARGS="-i cuda -p nsys"
 sleep 2
 make profile ARGS="-i sparse-cuda -p nsys"
 sleep 2
-make profile ARGS="-i cuda-mpi -p nsys"
+make profile ARGS="-i naive-cuda-mpi -p nsys -pt linear"
 sleep 2
-make profile ARGS="-i naive-cuda-mpi -p nsys"
+make profile ARGS="-i naive-cuda-mpi -p nsys -pt louvain"
+sleep 2
+make profile ARGS="-i naive-cuda-mpi -p nsys -pt red-blue"
+sleep 2
+make profile ARGS="-i cuda-mpi -p nsys -pt linear"
+sleep 2
+make profile ARGS="-i cuda-mpi -p nsys -pt louvain"
+sleep 2
+make profile ARGS="-i cuda-mpi -p nsys -pt red-blue"
 sleep 2
 
 echo "Collecting NVIDIA Compute Utility profiles..."

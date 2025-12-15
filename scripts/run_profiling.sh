@@ -27,6 +27,8 @@ NCU_OPTS=""
 PROFILER="nsys"  # Options: nsys, ncu, both
 OUTPUT_PREFIX="snp_profile"
 STEPS=""  # Empty means run to completion (max steps)
+PARTITIONER=""  # Empty means use default (linear); Options: linear, louvain, red-blue
+ARRAY_SIZE="2048"  # Default array size
 
 # Colors for output
 GREEN='\033[0;32m'
@@ -65,6 +67,9 @@ Options:
   --ncu-opts "OPTIONS"      Additional ncu options (default: none)
   -o, --output PREFIX       Output file prefix (default: snp_profile)
   -s, --steps N             Number of simulation steps to run (default: max/all)
+  --partitioner TYPE        Partitioner for MPI implementations (default: linear)
+                            Options: linear, louvain, red-blue
+  --array-size N            Array size for profiling (default: 2048)
   -h, --help                Show this help message
 
 Examples:
@@ -74,6 +79,10 @@ Examples:
   $0 -i mpi -n 4 -p nsys                 # Profile MPI with Nsight Systems
   $0 -i sparse-cuda -p ncu --ncu-opts "--set full"  # Detailed kernel profiling
   $0 -i cuda -s 100                      # Profile CUDA for 100 steps only
+  $0 -i cuda-mpi --partitioner louvain   # Profile CUDA+MPI with Louvain partitioner
+  $0 -i mpi -s 100 --partitioner red-blue # Profile MPI for 100 steps with Red-Blue
+  $0 -i cuda --array-size 4096           # Profile CUDA with array size 4096
+  $0 -i cuda-mpi -s 100 --partitioner louvain --array-size 8192  # Custom size with Louvain
 
 Available Implementations:
   cpu           - NaiveCpuSnp (single process)
@@ -204,12 +213,20 @@ run_profiling_nsys() {
     # Build MPI command
     mpi_cmd="mpirun -np 2 --host localhost,10.0.0.2 --mca btl_tcp_if_include ens5 --mca oob_tcp_if_include ens5"
     
-    # Construct full command with optional steps parameter
+    # Construct full command with optional steps, partitioner, and array size parameters
+    local args="$impl"
     if [ -n "$STEPS" ]; then
-        local full_cmd="$mpi_cmd $nsys_cmd $PROFILE_EXEC $impl $STEPS"
+        args="$args $STEPS"
     else
-        local full_cmd="$mpi_cmd $nsys_cmd $PROFILE_EXEC $impl"
+        args="$args 0"  # 0 means run to completion
     fi
+    if [ -n "$PARTITIONER" ]; then
+        args="$args $PARTITIONER"
+    else
+        args="$args linear"  # Default partitioner
+    fi
+    args="$args $ARRAY_SIZE"
+    local full_cmd="$mpi_cmd $nsys_cmd $PROFILE_EXEC $args"
     
     echo -e "${YELLOW}Command:${NC} $full_cmd"
     echo ""
@@ -255,17 +272,28 @@ run_profiling_ncu() {
     if [[ "$impl" == *"mpi"* ]]; then
         output_file="${output_file}_%h_rank%q{OMPI_COMM_WORLD_RANK}"
         mpi_cmd="mpirun -np 2 --host localhost,10.0.0.2 --mca btl_tcp_if_include ens5 --mca oob_tcp_if_include ens5"
+        local args="$impl"
         if [ -n "$STEPS" ]; then
-            local full_cmd="$mpi_cmd $ncu_cmd $PROFILE_EXEC $impl $STEPS"
+            args="$args $STEPS"
         else
-            local full_cmd="$mpi_cmd $ncu_cmd $PROFILE_EXEC $impl"
+            args="$args 0"
         fi
+        if [ -n "$PARTITIONER" ]; then
+            args="$args $PARTITIONER"
+        else
+            args="$args linear"  # Default partitioner
+        fi
+        args="$args $ARRAY_SIZE"
+        local full_cmd="$mpi_cmd $ncu_cmd $PROFILE_EXEC $args"
     else
+        local args="$impl"
         if [ -n "$STEPS" ]; then
-            local full_cmd="$ncu_cmd $PROFILE_EXEC $impl $STEPS"
+            args="$args $STEPS"
         else
-            local full_cmd="$ncu_cmd $PROFILE_EXEC $impl"
+            args="$args 0"
         fi
+        args="$args linear $ARRAY_SIZE"  # Partitioner (unused for non-MPI) and array size
+        local full_cmd="$ncu_cmd $PROFILE_EXEC $args"
     fi
     
     echo -e "${YELLOW}Command:${NC} $full_cmd"
@@ -343,6 +371,14 @@ while [[ $# -gt 0 ]]; do
             STEPS="$2"
             shift 2
             ;;
+        -pt|--partitioner)
+            PARTITIONER="$2"
+            shift 2
+            ;;
+        -as|--array-size)
+            ARRAY_SIZE="$2"
+            shift 2
+            ;;
         -h|--help)
             print_usage
             exit 0
@@ -370,6 +406,10 @@ if [ -n "$STEPS" ]; then
 else
     echo "  Steps: max (run to completion)"
 fi
+if [ -n "$PARTITIONER" ]; then
+    echo "  Partitioner: $PARTITIONER (for MPI implementations)"
+fi
+echo "  Array Size: $ARRAY_SIZE"
 echo "  Output Directory: $OUTPUT_DIR"
 echo "  Hostfile: $HOSTFILE"
 echo ""

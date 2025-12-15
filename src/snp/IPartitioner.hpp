@@ -3,6 +3,8 @@
 #include "SnpSystemConfig.hpp"
 #include <vector>
 #include <string>
+#include <algorithm>
+#include <cctype>
 
 enum class PartitionerType {
     LINEAR,
@@ -49,5 +51,32 @@ public:
             case PartitionerType::CUSTOM: return "Custom";
             default: return "Unknown";
         }
+    }
+
+    /**
+     * @brief Parse a partitioner type from a string name.
+     * 
+     * Accepts case-insensitive names: "linear", "louvain", "red-blue", "redblue", "custom"
+     * 
+     * @param name The string name of the partitioner
+     * @param defaultType The default type to return if parsing fails
+     * @return PartitionerType The parsed partitioner type or default
+     */
+    static PartitionerType parsePartitionerType(const std::string& name, 
+                                                  PartitionerType defaultType = PartitionerType::LINEAR) {
+        std::string lower = name;
+        std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
+        
+        if (lower == "linear" || lower == "block") {
+            return PartitionerType::LINEAR;
+        } else if (lower == "louvain" || lower == "community") {
+            return PartitionerType::LOUVAIN;
+        } else if (lower == "red-blue" || lower == "redblue" || lower == "rb" || lower == "bfs") {
+            return PartitionerType::RED_BLUE_BFS;
+        } else if (lower == "custom") {
+            return PartitionerType::CUSTOM;
+        }
+        
+        return defaultType;
     }
 };
