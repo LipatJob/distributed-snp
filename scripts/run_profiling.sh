@@ -26,6 +26,7 @@ NSYS_OPTS=""
 NCU_OPTS=""
 PROFILER="nsys"  # Options: nsys, ncu, both
 OUTPUT_PREFIX="snp_profile"
+STEPS=""  # Empty means run to completion (max steps)
 
 # Colors for output
 GREEN='\033[0;32m'
@@ -63,6 +64,7 @@ Options:
   --nsys-opts "OPTIONS"     Additional nsys options (default: none)
   --ncu-opts "OPTIONS"      Additional ncu options (default: none)
   -o, --output PREFIX       Output file prefix (default: snp_profile)
+  -s, --steps N             Number of simulation steps to run (default: max/all)
   -h, --help                Show this help message
 
 Examples:
@@ -71,6 +73,7 @@ Examples:
   $0 -i cuda -p both                     # Profile CUDA with both tools
   $0 -i mpi -n 4 -p nsys                 # Profile MPI with Nsight Systems
   $0 -i sparse-cuda -p ncu --ncu-opts "--set full"  # Detailed kernel profiling
+  $0 -i cuda -s 100                      # Profile CUDA for 100 steps only
 
 Available Implementations:
   cpu           - NaiveCpuSnp (single process)
@@ -181,7 +184,7 @@ copy_binaries_to_nodes() {
 run_profiling_nsys() {
     local impl="$1"
     local timestamp=$(date +%Y%m%d_%H%M%S)
-    local output_file="${OUTPUT_DIR}/${OUTPUT_PREFIX}_${impl}_nsys_${timestamp}_%h_rank%q{OMPI_COMM_WORLD_RANK}"
+    local output_file="${OUTPUT_DIR}/${OUTPUT_PREFIX}_nsys_${impl}_${timestamp}_%h_rank%q{OMPI_COMM_WORLD_RANK}"
     
     echo ""
     echo -e "${BLUE}═══════════════════════════════════════════════════════${NC}"
@@ -201,8 +204,12 @@ run_profiling_nsys() {
     # Build MPI command
     mpi_cmd="mpirun -np 2 --host localhost,10.0.0.2 --mca btl_tcp_if_include ens5 --mca oob_tcp_if_include ens5"
     
-    # Construct full command
-    local full_cmd="$mpi_cmd $nsys_cmd $PROFILE_EXEC $impl"
+    # Construct full command with optional steps parameter
+    if [ -n "$STEPS" ]; then
+        local full_cmd="$mpi_cmd $nsys_cmd $PROFILE_EXEC $impl $STEPS"
+    else
+        local full_cmd="$mpi_cmd $nsys_cmd $PROFILE_EXEC $impl"
+    fi
     
     echo -e "${YELLOW}Command:${NC} $full_cmd"
     echo ""
@@ -219,7 +226,8 @@ run_profiling_nsys() {
 run_profiling_ncu() {
     local impl="$1"
     local timestamp=$(date +%Y%m%d_%H%M%S)
-    local output_file="${OUTPUT_DIR}/${OUTPUT_PREFIX}_${impl}_ncu_${timestamp}"
+    local output_file="${OUTPUT_DIR}/${OUTPUT_PREFIX}_ncu_${impl}_${timestamp}"
+    mkdir -p "$OUTPUT_DIR"
     
     echo ""
     echo -e "${BLUE}═══════════════════════════════════════════════════════${NC}"
@@ -236,19 +244,28 @@ run_profiling_ncu() {
     
     # Build ncu command
     # Default: profile all kernels with detailed metrics
-    local ncu_cmd="ncu --set full --export $output_file --force-overwrite"
+    local ncu_cmd="/usr/local/cuda/bin/ncu --set full --export $output_file --force-overwrite --call-stack"
     
     # Add custom options if provided
     if [ -n "$NCU_OPTS" ]; then
-        ncu_cmd="ncu $NCU_OPTS --export $output_file --force-overwrite"
+        ncu_cmd="/usr/local/cuda/bin/ncu $NCU_OPTS --export $output_file --force-overwrite"
     fi
 
     # For MPI implementations, we need to use mpirun
     if [[ "$impl" == *"mpi"* ]]; then
+        output_file="${output_file}_%h_rank%q{OMPI_COMM_WORLD_RANK}"
         mpi_cmd="mpirun -np 2 --host localhost,10.0.0.2 --mca btl_tcp_if_include ens5 --mca oob_tcp_if_include ens5"
-        local full_cmd="$mpi_cmd $ncu_cmd $PROFILE_EXEC $impl"
+        if [ -n "$STEPS" ]; then
+            local full_cmd="$mpi_cmd $ncu_cmd $PROFILE_EXEC $impl $STEPS"
+        else
+            local full_cmd="$mpi_cmd $ncu_cmd $PROFILE_EXEC $impl"
+        fi
     else
-        local full_cmd="$ncu_cmd $PROFILE_EXEC $impl"
+        if [ -n "$STEPS" ]; then
+            local full_cmd="$ncu_cmd $PROFILE_EXEC $impl $STEPS"
+        else
+            local full_cmd="$ncu_cmd $PROFILE_EXEC $impl"
+        fi
     fi
     
     echo -e "${YELLOW}Command:${NC} $full_cmd"
@@ -322,6 +339,10 @@ while [[ $# -gt 0 ]]; do
             OUTPUT_PREFIX="$2"
             shift 2
             ;;
+        -s|--steps)
+            STEPS="$2"
+            shift 2
+            ;;
         -h|--help)
             print_usage
             exit 0
@@ -344,6 +365,11 @@ echo "Configuration:"
 echo "  Implementation: $IMPLEMENTATION"
 echo "  Profiler: $PROFILER"
 echo "  MPI Processes: $NUM_PROCS"
+if [ -n "$STEPS" ]; then
+    echo "  Steps: $STEPS"
+else
+    echo "  Steps: max (run to completion)"
+fi
 echo "  Output Directory: $OUTPUT_DIR"
 echo "  Hostfile: $HOSTFILE"
 echo ""

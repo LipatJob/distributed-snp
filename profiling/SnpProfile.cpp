@@ -1,4 +1,4 @@
-#include "../sort/ISort.hpp"
+#include "../sort/SnpSort.cpp"
 #include "../snp/ISnpSimulator.hpp"
 #include "../snp/SnpSystemConfig.hpp"
 #include <mpi.h>
@@ -16,19 +16,10 @@
 // SNP Implementations Factory Functions (Add new simulators here)
 // ============================================================================
 
-// Forward declarations
-std::unique_ptr<ISort> createNaiveCpuSnpSort();
-std::unique_ptr<ISort> createCudaSnpSort();
-std::unique_ptr<ISort> createSparseCudaSnpSort();
-std::unique_ptr<ISort> createPartitionedNaiveCudaMpiSnpSort(){
-    return createNaiveCudaMpiSnpSort(PartitionerType::LINEAR);
-}
-std::unique_ptr<ISort> createParitionedCudaMpiSnpSort(){
-    return createCudaMpiSnpSort(PartitionerType::LINEAR);
-}
+// No forward declarations needed - using simulator factories from ISnpSimulator.hpp
 
 // Type alias for cleaner code
-using SorterFactory = std::function<std::unique_ptr<ISort>()>;
+using SimulatorFactory = std::function<std::unique_ptr<ISnpSimulator>()>;
 
 // ============================================================================
 // Profiling Configuration
@@ -36,10 +27,11 @@ using SorterFactory = std::function<std::unique_ptr<ISort>()>;
 
 struct ProfileConfig {
     std::string name;
-    SorterFactory factory;
+    SimulatorFactory factory;
     size_t arraySize;
     int maxValue;
     bool isDistributed;  // Requires MPI with multiple processes
+    int steps;           // Number of steps to run (0 = run to completion)
 };
 
 // ============================================================================
@@ -82,14 +74,25 @@ void profileImplementation(const ProfileConfig& config, int rank, int worldSize)
         std::cout << "Array Size: " << config.arraySize << "\n";
         std::cout << "Max Value: " << config.maxValue << "\n";
         std::cout << "MPI Processes: " << worldSize << "\n";
+        if (config.steps > 0) {
+            std::cout << "Steps: " << config.steps << "\n";
+        } else {
+            std::cout << "Steps: max (run to completion)\n";
+        }
         std::cout << "=======================================================\n";
     }
     
     // Generate test data
     auto data = generateRandomData(config.arraySize, config.maxValue, 42);
     
-    // Create sorter instance
-    auto sorter = config.factory();
+    // Create simulator instance from factory
+    auto simulator = config.factory();
+    
+    // Keep a raw pointer to simulator for direct step() calls
+    ISnpSimulator* simPtr = simulator.get();
+    
+    // Create sorter with simulator (sorter takes ownership)
+    auto sorter = std::make_unique<SnpSort>(std::move(simulator));
     
     // Load data (preparation phase - not profiled by nsys)
     sorter->load(data.data(), data.size());
@@ -98,25 +101,41 @@ void profileImplementation(const ProfileConfig& config, int rank, int worldSize)
         std::cout << "Starting execution...\n";
     }
     
-    cudaProfilerStart();
-
-    // Execute sorting (THIS IS THE SECTION PROFILED BY NSYS)
-    auto result = sorter->execute();
-
-    cudaProfilerStop();
     
-    // Verify results on rank 0
+    std::vector<int> results;
+    // Execute sorting (THIS IS THE SECTION PROFILED)
+    if (config.steps > 0) {
+        if (rank == 0) {
+            std::cout << "Executing for " << config.steps << " steps...\n";
+        }
+        cudaProfilerStart();
+        simPtr->step(config.steps);
+        cudaProfilerStop();
+    } else {
+        if (rank == 0) {
+            std::cout << "Executing to completion...\n";
+        }
+        cudaProfilerStart();
+        results = sorter->execute();
+        cudaProfilerStop();
+    }
+
+    // Report on rank 0
     if (rank == 0) {
         std::cout << "Execution completed.\n";
-        
-        if (isSorted(result)) {
-            std::cout << "✓ Result is correctly sorted\n";
+
+        if (isSorted(results)) {
+            if (rank == 0) {
+                std::cout << "Result: Array is sorted correctly.\n";
+            }
         } else {
-            std::cerr << "✗ ERROR: Result is NOT sorted!\n";
+            if (rank == 0) {
+                std::cerr << "Result: Array is NOT sorted correctly!\n";
+            }
         }
         
         // Print performance report
-        std::string perfReport = sorter->getPerformanceReport();
+        std::string perfReport = simPtr->getPerformanceReport();
         std::cout << "\nPerformance Report:\n" << perfReport << "\n";
     }
 }
@@ -146,22 +165,27 @@ int main(int argc, char** argv) {
     
     // Parse command line for specific implementation
     std::string targetImpl = "";
+    int numSteps = 0;  // 0 means run to completion
     if (argc > 1) {
         targetImpl = argv[1];
     }
+    if (argc > 2) {
+        numSteps = std::atoi(argv[2]);
+    }
     
     // Define medium-sized array (similar to benchmark suite)
-    const size_t MEDIUM_SIZE = 128;
-    const int MEDIUM_MAX = 128;
+    const size_t MEDIUM_SIZE = 2048;
+    const int MEDIUM_MAX = 2048;
     
     // CPU Implementation
     if (targetImpl.empty() || targetImpl == "cpu" || targetImpl == "all") {
         profileConfigs.push_back({
             "NaiveCpuSnp",
-            createNaiveCpuSnpSort,
+            createNaiveCpuSimulator,
             MEDIUM_SIZE,
             MEDIUM_MAX,
-            false  // Single process
+            false,  // Single process
+            numSteps
         });
     }
     
@@ -169,10 +193,11 @@ int main(int argc, char** argv) {
     if (targetImpl.empty() || targetImpl == "cuda" || targetImpl == "all") {
         profileConfigs.push_back({
             "CudaSnp",
-            createCudaSnpSort,
+            createCudaSimulator,
             MEDIUM_SIZE,
             MEDIUM_MAX,
-            false  // Single process
+            false,  // Single process
+            numSteps
         });
     }
     
@@ -180,10 +205,11 @@ int main(int argc, char** argv) {
     if (targetImpl.empty() || targetImpl == "sparse-cuda" || targetImpl == "all") {
         profileConfigs.push_back({
             "SparseCudaSnp",
-            createSparseCudaSnpSort,
+            createSparseCudaSimulator,
             MEDIUM_SIZE,
             MEDIUM_MAX,
-            false  // Single process
+            false,  // Single process
+            numSteps
         });
     }
     
@@ -191,10 +217,11 @@ int main(int argc, char** argv) {
     if (targetImpl.empty() || targetImpl == "naive-cuda-mpi" || targetImpl == "mpi" || targetImpl == "all") {
         profileConfigs.push_back({
             "NaiveCudaMpiSnp",
-            createPartitionedNaiveCudaMpiSnpSort,
+            []() { return createNaiveCudaMpiSimulator(PartitionerType::LINEAR); },
             MEDIUM_SIZE,
             MEDIUM_MAX,
-            true  // Requires MPI
+            true,  // Requires MPI
+            numSteps
         });
     }
     
@@ -202,10 +229,11 @@ int main(int argc, char** argv) {
     if (targetImpl.empty() || targetImpl == "cuda-mpi" || targetImpl == "mpi" || targetImpl == "all") {
         profileConfigs.push_back({
             "CudaMpiSnp",
-            createParitionedCudaMpiSnpSort,
+            []() { return createCudaMpiSimulator(PartitionerType::LINEAR); },
             MEDIUM_SIZE,
             MEDIUM_MAX,
-            true  // Requires MPI
+            true,  // Requires MPI
+            numSteps
         });
     }
     
