@@ -10,7 +10,16 @@ PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 OUTPUT_DIR="${PROJECT_ROOT}/benchmark_results"
 HOSTFILE="${PROJECT_ROOT}/hostfile.txt"
 
-BUILD_DIR="/home/shared/tmp/distributed-snp-new"
+# Detect build directory (standard cmake locations)
+if [ -d "${PROJECT_ROOT}/build/bin" ]; then
+    BUILD_DIR="${PROJECT_ROOT}/build"
+elif [ -d "${PROJECT_ROOT}/bin" ]; then
+    BUILD_DIR="${PROJECT_ROOT}"
+else
+    echo "Error: Could not find build/bin directory."
+    exit 1
+fi
+
 BENCHMARK_EXEC="${BUILD_DIR}/bin/sort_benchmark"
 
 HOSTS="localhost,10.0.0.2"

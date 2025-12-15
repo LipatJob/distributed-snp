@@ -44,11 +44,23 @@ find_package(OpenMP REQUIRED)
 find_package(MPI REQUIRED)
 find_package(CUDAToolkit REQUIRED)
 
+# --- Optional: METIS for Partitioning ---
+find_library(METIS_LIB NAMES metis)
+find_path(METIS_INCLUDE_DIR NAMES metis.h)
+
+if(METIS_LIB AND METIS_INCLUDE_DIR)
+    message(STATUS "Found METIS: ${METIS_LIB}")
+    set(ENABLE_METIS ON)
+else()
+    message(STATUS "METIS not found. MetisPartitioner will be disabled.")
+    set(ENABLE_METIS OFF)
+endif()
+
 # ============================================================================
 # 3. SNP System Library
 # ============================================================================
 
-add_library(snp_system STATIC
+set(SNP_SYSTEM_SOURCES
     src/snp/SnpSystemConfig.hpp
     src/snp/ISnpSimulator.hpp
     src/snp/NaiveCpuSnpSimulator.cpp
@@ -56,8 +68,21 @@ add_library(snp_system STATIC
     src/snp/SparseCudaSnpSimulator.cu
     src/snp/NaiveCudaMpiSnpSimulator.cu
     src/snp/CudaMpiSnpSimulator.cu
+    src/snp/SparseCudaMpiSnpSimulator.cu
     src/snp/LouvainPartitioner.cpp
 )
+
+if(ENABLE_METIS)
+    list(APPEND SNP_SYSTEM_SOURCES src/snp/MetisPartitioner.cpp)
+endif()
+
+add_library(snp_system STATIC ${SNP_SYSTEM_SOURCES})
+
+if(ENABLE_METIS)
+    target_compile_definitions(snp_system PUBLIC ENABLE_METIS)
+    target_include_directories(snp_system PUBLIC ${METIS_INCLUDE_DIR})
+    target_link_libraries(snp_system PUBLIC ${METIS_LIB})
+endif()
 
 set_target_properties(snp_system PROPERTIES
     CUDA_SEPARABLE_COMPILATION ON

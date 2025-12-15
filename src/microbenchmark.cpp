@@ -35,6 +35,16 @@ std::unique_ptr<ISort> createSorter(const std::string& impl) {
         return createCudaMpiSnpSort(PartitionerType::LOUVAIN);
     } else if (impl == "cuda-mpi-redblue") {
         return createCudaMpiSnpSort(PartitionerType::RED_BLUE_BFS);
+    }
+    else if (impl == "sparse-cuda-mpi")
+    {
+        return createSparseCudaMpiSnpSort(PartitionerType::LINEAR);
+#ifdef ENABLE_METIS
+    }
+    else if (impl == "sparse-cuda-mpi-metis")
+    {
+        return createSparseCudaMpiSnpSort(PartitionerType::METIS);
+#endif
     } else {
         std::cerr << "Unknown implementation: " << impl << "\n";
         return nullptr;

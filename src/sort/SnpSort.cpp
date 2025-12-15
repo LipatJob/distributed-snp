@@ -209,3 +209,9 @@ std::unique_ptr<ISort> createCudaMpiSnpSort(PartitionerType pType)
 {
     return std::make_unique<SnpSort>(createCudaMpiSimulator(pType));
 }
+
+// Factory function to create SnpSort with Sparse CUDA/MPI simulator
+std::unique_ptr<ISort> createSparseCudaMpiSnpSort(PartitionerType pType)
+{
+    return std::make_unique<SnpSort>(createSparseCudaMpiSimulator(pType));
+}

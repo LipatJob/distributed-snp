@@ -10,6 +10,7 @@ enum class PartitionerType {
     LINEAR,
     LOUVAIN,
     RED_BLUE_BFS,
+    METIS,
     CUSTOM
 };
 
@@ -48,6 +49,7 @@ public:
             case PartitionerType::LINEAR: return "Linear (Block) Partitioning";
             case PartitionerType::LOUVAIN: return "Louvain Community Detection";
             case PartitionerType::RED_BLUE_BFS: return "Red-Blue Pebbling (BFS)";
+            case PartitionerType::METIS: return "METIS Graph Partitioning";
             case PartitionerType::CUSTOM: return "Custom";
             default: return "Unknown";
         }

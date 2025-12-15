@@ -5,6 +5,9 @@
 #include "LinearPartitioner.hpp"
 #include "LouvainPartitioner.hpp"
 #include "RedBluePartitioner.hpp"
+#ifdef ENABLE_METIS
+#include "MetisPartitioner.hpp"
+#endif
 #include "SnpSystemPermuter.hpp"
 #include <mpi.h>
 #include <cuda_runtime.h>

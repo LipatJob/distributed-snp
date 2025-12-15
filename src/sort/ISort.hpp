@@ -79,3 +79,4 @@ std::unique_ptr<ISort> createCudaSnpSort();
 std::unique_ptr<ISort> createSparseCudaSnpSort();
 std::unique_ptr<ISort> createNaiveCudaMpiSnpSort(PartitionerType pType = PartitionerType::LINEAR);
 std::unique_ptr<ISort> createCudaMpiSnpSort(PartitionerType pType = PartitionerType::LINEAR);
+std::unique_ptr<ISort> createSparseCudaMpiSnpSort(PartitionerType pType = PartitionerType::LINEAR);

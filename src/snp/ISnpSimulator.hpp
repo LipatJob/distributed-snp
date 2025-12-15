@@ -78,3 +78,4 @@ std::unique_ptr<ISnpSimulator> createCudaSimulator();
 std::unique_ptr<ISnpSimulator> createSparseCudaSimulator();
 std::unique_ptr<ISnpSimulator> createNaiveCudaMpiSimulator(PartitionerType partitionerType = PartitionerType::LINEAR);
 std::unique_ptr<ISnpSimulator> createCudaMpiSimulator(PartitionerType partitionerType = PartitionerType::LINEAR);
+std::unique_ptr<ISnpSimulator> createSparseCudaMpiSimulator(PartitionerType partitionerType = PartitionerType::LINEAR);

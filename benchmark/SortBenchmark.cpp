@@ -335,6 +335,20 @@ int main(int argc, char** argv) {
     RegisterSimulator("CudaMpiSnp_RedBlue", []()
                       { return createCudaMpiSnpSort(PartitionerType::RED_BLUE_BFS); }, Suites::Medium);
 
+    // 6. Sparse CUDA/MPI (Linear - Default)
+    RegisterSimulator("SparseCudaMpiSnp", []()
+                      { return createSparseCudaMpiSnpSort(PartitionerType::LINEAR); }, Suites::Small);
+    RegisterSimulator("SparseCudaMpiSnp", []()
+                      { return createSparseCudaMpiSnpSort(PartitionerType::LINEAR); }, Suites::Medium);
+
+#ifdef ENABLE_METIS
+    // 6b. Sparse CUDA/MPI (METIS)
+    RegisterSimulator("SparseCudaMpiSnp_Metis", []()
+                      { return createSparseCudaMpiSnpSort(PartitionerType::METIS); }, Suites::Small);
+    RegisterSimulator("SparseCudaMpiSnp_Metis", []()
+                      { return createSparseCudaMpiSnpSort(PartitionerType::METIS); }, Suites::Medium);
+#endif
+
     // --- EXECUTION PHASE ---
     if (rank == 0) {
         std::cout << "SNP Benchmark Suite Initialized." << std::endl;
