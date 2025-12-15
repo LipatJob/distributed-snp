@@ -4,7 +4,7 @@
 set -e
 
 # Configuration
-BUILD_DIR="/home/shared/distributed-snp-new/build"
+BUILD_DIR="/home/shared/tmp/distributed-snp-new"
 HOSTS="localhost,10.0.0.2"
 NUM_PROCS=2
 
@@ -17,18 +17,6 @@ echo "=============================================="
 # Set library path for both local and remote execution
 export LD_LIBRARY_PATH=${BUILD_DIR}/lib:${BUILD_DIR}/_deps/googletest-build/lib:$LD_LIBRARY_PATH
 
-# # Run matrix operations tests with MPI
-# echo ""
-# echo "Running Matrix Operations Tests..."
-# echo "----------------------------------------------"
-# mpirun -np ${NUM_PROCS} \
-#        --host ${HOSTS} \
-#        --allow-run-as-root \
-#        --mca btl_tcp_if_include ens5 \
-# 	   --mca oob_tcp_if_include ens5 \
-#        -x LD_LIBRARY_PATH \
-#        ${BUILD_DIR}/test_matrix_ops
-
 # Run SNP simulator tests with MPI
 echo ""
 echo "Running SNP Simulator Tests..."
@@ -39,7 +27,7 @@ mpirun -np ${NUM_PROCS} \
        --mca btl_tcp_if_include ens5 \
        --mca oob_tcp_if_include ens5 \
        -x LD_LIBRARY_PATH \
-       ${BUILD_DIR}/test_snp_simulator
+       ${BUILD_DIR}/bin/test_snp_simulator
 
 # Run sorting tests with MPI
 echo ""
@@ -51,7 +39,7 @@ mpirun -np ${NUM_PROCS} \
        --mca btl_tcp_if_include ens5 \
        --mca oob_tcp_if_include ens5 \
        -x LD_LIBRARY_PATH \
-       ${BUILD_DIR}/test_sort
+       ${BUILD_DIR}/bin/test_sort
 
 echo ""
 echo "=============================================="

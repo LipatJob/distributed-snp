@@ -1,83 +1,51 @@
 cmake_minimum_required(VERSION 3.18)
 project(new-snp LANGUAGES CXX CUDA)
 
-# Set C++ standard
+# ============================================================================
+# 1. Project Configuration & Defaults
+# ============================================================================
+
+# C++ and CUDA Standards
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CUDA_STANDARD 17)
 set(CMAKE_CUDA_STANDARD_REQUIRED ON)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-# Set build type if not specified
+# Default to Release build if not specified
 if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Release)
 endif()
 
-# Compiler flags
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra")
-set(CMAKE_CXX_FLAGS_DEBUG "-g -O0")
-set(CMAKE_CXX_FLAGS_RELEASE "-O3 -DNDEBUG")
+# Configuration Variables (Easily editable)
+set(CUDA_ARCH_TARGET "75" CACHE STRING "Target CUDA architecture")
+set(MPI_TEST_HOSTS "localhost,10.0.0.2" CACHE STRING "Hosts for MPI tests")
+option(BUILD_TESTS "Build tests and benchmarks" ON)
 
-# Find required packages
+# --- KEY REQUEST: Centralized Build Artifacts ---
+# This ensures all binaries/libs go to build/bin and build/lib immediately
+set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
+set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
+
+# Global Compiler Warnings (Applied to C++ targets)
+if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+    add_compile_options($<$<COMPILE_LANGUAGE:CXX>:-g -O0>)
+else()
+    add_compile_options($<$<COMPILE_LANGUAGE:CXX>:-O3>)
+    add_compile_definitions(NDEBUG)
+endif()
+
+# ============================================================================
+# 2. Dependencies
+# ============================================================================
+
 find_package(OpenMP REQUIRED)
 find_package(MPI REQUIRED)
 find_package(CUDAToolkit REQUIRED)
 
-# Option to enable/disable tests
-option(BUILD_TESTS "Build tests" ON)
-
-# Include directories
-include_directories(
-    ${PROJECT_SOURCE_DIR}/src/linear_algebra
-    ${PROJECT_SOURCE_DIR}/src/snp
-    ${MPI_CXX_INCLUDE_DIRS}
-)
-
 # ============================================================================
-# Linear Algebra Library
-# ============================================================================
-
-# CPU implementation
-add_library(cpu_matrix_ops STATIC
-    src/linear_algebra/CpuMatrixOps.cpp
-)
-target_link_libraries(cpu_matrix_ops PUBLIC OpenMP::OpenMP_CXX)
-
-# CUDA implementation
-add_library(cuda_matrix_ops STATIC
-    src/linear_algebra/CudaMatrixOps.cu
-)
-set_target_properties(cuda_matrix_ops PROPERTIES
-    CUDA_SEPARABLE_COMPILATION ON
-    CUDA_RESOLVE_DEVICE_SYMBOLS ON
-    CUDA_ARCHITECTURES "75"  # Adjust based on your GPU architecture
-)
-target_link_libraries(cuda_matrix_ops PUBLIC CUDA::cudart)
-
-# MPI+CUDA implementation
-add_library(mpi_cuda_matrix_ops STATIC
-    src/linear_algebra/MpiCudaMatrixOps.cu
-)
-set_target_properties(mpi_cuda_matrix_ops PROPERTIES
-    CUDA_SEPARABLE_COMPILATION ON
-    CUDA_RESOLVE_DEVICE_SYMBOLS ON
-    CUDA_ARCHITECTURES "75"  # Adjust based on your GPU architecture
-)
-target_link_libraries(mpi_cuda_matrix_ops PUBLIC 
-    CUDA::cudart
-    MPI::MPI_CXX
-)
-target_include_directories(mpi_cuda_matrix_ops PRIVATE ${MPI_CXX_INCLUDE_DIRS})
-
-# Combined matrix operations library
-add_library(matrix_ops INTERFACE)
-target_link_libraries(matrix_ops INTERFACE
-    cpu_matrix_ops
-    cuda_matrix_ops
-    mpi_cuda_matrix_ops
-)
-
-# ============================================================================
-# SNP System Library
+# 3. SNP System Library
 # ============================================================================
 
 add_library(snp_system STATIC
@@ -90,200 +58,112 @@ add_library(snp_system STATIC
     src/snp/CudaMpiSnpSimulator.cu
     src/snp/LouvainPartitioner.cpp
 )
+
 set_target_properties(snp_system PROPERTIES
     CUDA_SEPARABLE_COMPILATION ON
     CUDA_RESOLVE_DEVICE_SYMBOLS ON
-    CUDA_ARCHITECTURES "75"  # Adjust based on your GPU architecture
+    CUDA_ARCHITECTURES ${CUDA_ARCH_TARGET}
 )
-target_link_libraries(snp_system PUBLIC
-    matrix_ops
-    MPI::MPI_CXX
-    CUDA::cudart
-)
-target_include_directories(snp_system PUBLIC
-    ${PROJECT_SOURCE_DIR}/src/snp
-    ${PROJECT_SOURCE_DIR}/src/linear_algebra
-    ${MPI_CXX_INCLUDE_DIRS}
-)
+
+target_include_directories(snp_system PUBLIC ${PROJECT_SOURCE_DIR}/src/snp)
+target_link_libraries(snp_system PUBLIC MPI::MPI_CXX CUDA::cudart)
 
 # ============================================================================
-# SNP Sort Library
+# 4. SNP Sort Library
 # ============================================================================
 
-add_library(snp_sort STATIC
-    src/sort/SnpSort.cpp
-
-)
-target_link_libraries(snp_sort PUBLIC
-    snp_system
-)
-target_include_directories(snp_sort PUBLIC
-    ${PROJECT_SOURCE_DIR}/src/sort
-    ${PROJECT_SOURCE_DIR}/src/snp
-)
+add_library(snp_sort STATIC src/sort/SnpSort.cpp)
+target_include_directories(snp_sort PUBLIC ${PROJECT_SOURCE_DIR}/src/sort)
+target_link_libraries(snp_sort PUBLIC snp_system)
 
 # ============================================================================
-# Main Executable
+# 5. Main Executables
 # ============================================================================
 
-add_executable(matrix_demo
-    src/main.cpp
-)
-
-target_link_libraries(matrix_demo PRIVATE
-    matrix_ops
-    MPI::MPI_CXX
-)
+# Profiling
+add_executable(snp_profile profiling/SnpProfile.cpp)
+target_link_libraries(snp_profile PRIVATE snp_sort snp_system MPI::MPI_CXX)
 
 # ============================================================================
-# Tests (if enabled)
+# 7. Tests & Benchmarks
 # ============================================================================
 
 if(BUILD_TESTS)
-    # Find GTest
-    find_package(GTest)
-    
-    if(NOT GTest_FOUND)
-        # Download and build GTest if not found
-        include(FetchContent)
-        FetchContent_Declare(
-            googletest
-            URL https://github.com/google/googletest/archive/refs/tags/v1.17.0.zip
-        )
-        FetchContent_MakeAvailable(googletest)
-    endif()
-
-    # Download and build Google Benchmark
     include(FetchContent)
-    set(BENCHMARK_ENABLE_TESTING OFF CACHE BOOL "Enable testing of the benchmark library.")
-    set(BENCHMARK_ENABLE_INSTALL OFF CACHE BOOL "Enable installation of benchmark.")
+    enable_testing()
+
+    # --- Fetch Dependencies ---
+    FetchContent_Declare(
+        googletest
+        URL https://github.com/google/googletest/archive/refs/tags/v1.17.0.zip
+    )
+    FetchContent_MakeAvailable(googletest)
+
+    set(BENCHMARK_ENABLE_TESTING OFF CACHE BOOL "" FORCE)
+    set(BENCHMARK_ENABLE_INSTALL OFF CACHE BOOL "" FORCE)
     FetchContent_Declare(
         googlebenchmark
         URL https://github.com/google/benchmark/archive/refs/tags/v1.8.3.zip
     )
     FetchContent_MakeAvailable(googlebenchmark)
 
-    enable_testing()
+    # --- Helper Macro for MPI Tests ---
+    # Reduces repetition for adding MPI tests
+    macro(add_mpi_test test_name target_name)
+        add_test(NAME ${test_name}
+                 COMMAND ${MPIEXEC_EXECUTABLE} 
+                 ${MPIEXEC_NUMPROC_FLAG} 2 
+                 --host ${MPI_TEST_HOSTS}
+                 ${MPIEXEC_PREFLAGS} $<TARGET_FILE:${target_name}> ${MPIEXEC_POSTFLAGS} 
+                 --allow-run-as-root)
+    endmacro()
 
-    # Linear Algebra Tests
-    add_executable(test_matrix_ops
-        tests/linear_algebra/MatrixOps.cpp
-    )
+    # --- Define Tests ---
     
-    target_link_libraries(test_matrix_ops PRIVATE
-        matrix_ops
-        GTest::gtest
-        GTest::gtest_main
-        MPI::MPI_CXX
-    )
+    # SNP Simulator
+    add_executable(test_snp_simulator tests/snp/SnpSimulator.cpp)
+    target_link_libraries(test_snp_simulator PRIVATE snp_system GTest::gtest GTest::gtest_main MPI::MPI_CXX)
+    add_mpi_test(SnpSimulatorTest test_snp_simulator)
 
-    # Use MPI to run tests (use 2 processes to avoid slot issues)
-    add_test(NAME MatrixOpsTest 
-             COMMAND ${MPIEXEC_EXECUTABLE} ${MPIEXEC_NUMPROC_FLAG} 2 --host localhost --allow-run-as-root --oversubscribe
-                     ${MPIEXEC_PREFLAGS} $<TARGET_FILE:test_matrix_ops> ${MPIEXEC_POSTFLAGS})
+    # SNP Sort
+    add_executable(test_sort tests/sort/SnpSort.cpp)
+    target_link_libraries(test_sort PRIVATE snp_sort snp_system GTest::gtest GTest::gtest_main MPI::MPI_CXX)
+    add_mpi_test(SnpSortTest test_sort)
 
-    # SNP Simulator Tests
-    add_executable(test_snp_simulator
-        tests/snp/SnpSimulator.cpp
-    )
+    # Partitioner
+    add_executable(test_partitioner tests/snp/PartitionerTest.cpp)
+    target_link_libraries(test_partitioner PRIVATE snp_system GTest::gtest GTest::gtest_main MPI::MPI_CXX)
+    add_mpi_test(PartitionerTest test_partitioner)
     
-    target_link_libraries(test_snp_simulator PRIVATE
-        snp_system
-        matrix_ops
-        GTest::gtest
-        GTest::gtest_main
-        MPI::MPI_CXX
-    )
+    # --- Benchmarks ---
+    add_executable(sort_benchmark benchmark/SortBenchmark.cpp)
+    target_link_libraries(sort_benchmark PRIVATE snp_sort snp_system benchmark::benchmark benchmark::benchmark_main MPI::MPI_CXX)
 
-    # Use MPI to run SNP simulator tests
-    add_test(NAME SnpSimulatorTest
-             COMMAND ${MPIEXEC_EXECUTABLE} ${MPIEXEC_NUMPROC_FLAG} 2 --host localhost --allow-run-as-root --oversubscribe
-                     ${MPIEXEC_PREFLAGS} $<TARGET_FILE:test_snp_simulator> ${MPIEXEC_POSTFLAGS})
-
-    # Partitioner Tests
-    add_executable(test_partitioner
-        tests/snp/PartitionerTest.cpp
-    )
-
-    target_link_libraries(test_partitioner PRIVATE
-        snp_system
-        GTest::gtest
-        GTest::gtest_main
-        MPI::MPI_CXX
-    )
-
-    add_test(NAME PartitionerTest
-             COMMAND ${MPIEXEC_EXECUTABLE} ${MPIEXEC_NUMPROC_FLAG} 2 --host localhost --allow-run-as-root --oversubscribe
-                     ${MPIEXEC_PREFLAGS} $<TARGET_FILE:test_partitioner> ${MPIEXEC_POSTFLAGS})
-
-    # SNP Sort Tests
-    add_executable(test_sort
-        tests/sort/SnpSort.cpp
-    )
-    
-    target_link_libraries(test_sort PRIVATE
-        snp_sort
-        snp_system
-        GTest::gtest
-        GTest::gtest_main
-        MPI::MPI_CXX
-    )
-
-    # Use MPI to run SNP sort tests
-    add_test(NAME SnpSortTest
-             COMMAND ${MPIEXEC_EXECUTABLE} ${MPIEXEC_NUMPROC_FLAG} 2 --host localhost --allow-run-as-root --oversubscribe
-                     ${MPIEXEC_PREFLAGS} $<TARGET_FILE:test_sort> ${MPIEXEC_POSTFLAGS})
-    
-    # ============================================================================
-    # Benchmarks
-    # ============================================================================
-    
-    # Sort Benchmark
-    add_executable(sort_benchmark
-        benchmark/SortBenchmark.cpp
-    )
-    
-    target_link_libraries(sort_benchmark PRIVATE
-        snp_sort
-        snp_system
-        benchmark::benchmark
-        benchmark::benchmark_main
-        MPI::MPI_CXX
-    )
-    
-    # Install benchmark executable
-    install(TARGETS sort_benchmark
-        RUNTIME DESTINATION bin
-    )
 endif()
 
 # ============================================================================
-# Installation
+# 8. Installation
 # ============================================================================
 
-install(TARGETS cpu_matrix_ops cuda_matrix_ops mpi_cuda_matrix_ops snp_system snp_sort matrix_demo
+# Note: CMAKE_RUNTIME_OUTPUT_DIRECTORY handles the build folder structure,
+# This handles the `make install` structure.
+install(TARGETS snp_system snp_sort
     RUNTIME DESTINATION bin
     ARCHIVE DESTINATION lib
     LIBRARY DESTINATION lib
 )
 
-install(FILES src/linear_algebra/MatrixOps.h src/linear_algebra/KernelMatrixOps.cuh
-    DESTINATION include
-)
+if(BUILD_TESTS)
+    install(TARGETS snp_profile sort_benchmark RUNTIME DESTINATION bin)
+endif()
 
 # ============================================================================
-# Print configuration summary
+# Summary
 # ============================================================================
-
-message(STATUS "")
-message(STATUS "==============================================")
-message(STATUS "Configuration Summary:")
-message(STATUS "  Build Type:        ${CMAKE_BUILD_TYPE}")
-message(STATUS "  C++ Compiler:      ${CMAKE_CXX_COMPILER}")
-message(STATUS "  CUDA Compiler:     ${CMAKE_CUDA_COMPILER}")
-message(STATUS "  MPI Compiler:      ${MPI_CXX_COMPILER}")
-message(STATUS "  OpenMP:            ${OpenMP_CXX_VERSION}")
-message(STATUS "  CUDA Version:      ${CUDAToolkit_VERSION}")
-message(STATUS "  Build Tests:       ${BUILD_TESTS}")
-message(STATUS "==============================================")
-message(STATUS "")
+message(STATUS "-------------------------------------------------")
+message(STATUS "Project:             ${PROJECT_NAME}")
+message(STATUS "Build Type:          ${CMAKE_BUILD_TYPE}")
+message(STATUS "Output Directory:    ${CMAKE_BINARY_DIR}/bin")
+message(STATUS "CUDA Architecture:   ${CUDA_ARCH_TARGET}")
+message(STATUS "MPI Test Hosts:      ${MPI_TEST_HOSTS}")
+message(STATUS "-------------------------------------------------")
