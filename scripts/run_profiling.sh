@@ -306,6 +306,33 @@ run_profiling_ncu() {
     echo -e "${GREEN}✓ Nsight Compute profile saved to: ${output_file}.ncu-rep${NC}"
     echo -e "${YELLOW}  View with: ncu-ui ${output_file}.ncu-rep${NC}"
     echo ""
+
+    relevant_metrics=(
+        "gpu__time_duration.sum"
+        "l1tex__data_bank_conflicts_pipe_lsu_mem_shared.sum"
+        "l1tex__data_pipe_lsu_wavefronts_mem_shared.sum"
+        "smsp__average_warps_issue_stalled_barrier_per_issue_active.pct"
+        "sm__sass_branch_targets.avg"
+        "sm__sass_branch_targets_threads_divergent.sum"
+        "l1tex__t_bytes_lookup_hit.sum"
+        "l1tex__t_bytes_lookup_miss.sum"
+        "lts__t_sectors_lookup_hit.sum"
+        "lts__t_sectors_lookup_miss.sum"
+        "lts__t_requests_lookup_hit.sum"
+        "lts__t_requests_lookup_miss.sum"
+        "dram__bytes_read.sum"
+        "dram__bytes_write.sum"
+        "smsp__warp_issue_stalled_long_scoreboard_per_warp_active.pct"
+        "smsp__warp_issue_stalled_short_scoreboard_per_warp_active.pct"
+        "smsp__warp_issue_stalled_wait_per_warp_active.pct"
+        "smsp__warp_issue_stalled_membar_per_warp_active.pct"
+        "smsp__warp_issue_stalled_mio_throttle_per_warp_active.pct"
+    )
+    echo -e "${BLUE}Collecting key metrics to CSV...${NC}"
+    ncu --import $output_file.ncu-rep --metrics $(IFS=, ; echo "${relevant_metrics[*]}") --page raw --csv > "${output_file}_metrics.csv"
+    echo -e "${GREEN}✓ Metrics saved to: ${output_file}_metrics.csv${NC}"
+    echo ""
+
 }
 
 run_profiling() {
