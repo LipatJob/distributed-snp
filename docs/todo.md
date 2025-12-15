@@ -3,6 +3,7 @@ General
 [ ] Thoroughly compare sparse and optimized CUDA -> sparseness
 [ ] Presentation
 [ ] Paper
+[ ] Create large scale SNP testing -> something that can't be done in one machine
 
 Job
 [x] Complete benchmark scenarios
