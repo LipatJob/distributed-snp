@@ -43,14 +43,11 @@ Usage: $0 [options]
 Options:
   -n, --num-procs N   Number of MPI processes (default: 2)
   -f, --filter REGEX  Run only benchmarks matching REGEX
-  --hostfile FILE     Path to MPI hostfile (default: ./hostfile.txt)
-  --no-hostfile       Run all on localhost
   -h, --help          Show this help
 
 Examples:
   $0                          # Run all benchmarks
   $0 -n 4 -f 'CudaMpi.*500'   # Filter 500-element benchmarks
-  $0 --no-hostfile            # Run locally only
 EOF
             exit 0
             ;;
@@ -81,8 +78,7 @@ echo -e "  Results: ${RESULT_DIR}"
 echo ""
 
 # Run benchmark
-MPI_CMD="mpirun -np $NUM_PROCS --host ${HOSTS} --mca btl_tcp_if_include ens5 \
-  --mca oob_tcp_if_include ens5 --allow-run-as-root --oversubscribe"
+MPI_CMD="mpirun -np $NUM_PROCS --host ${HOSTS} --mca btl_tcp_if_include ens5 --mca oob_tcp_if_include ens5"
 
 echo -e "${BLUE}▶${NC} Running benchmarks..."
 $MPI_CMD $BENCHMARK_CMD
