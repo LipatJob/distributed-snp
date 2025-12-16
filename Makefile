@@ -35,7 +35,6 @@ endif
 
 # --- Colors ---
 GREEN  := \033[0;32m
-YELLOW := \033[0;33m
 BLUE   := \033[0;34m
 NC     := \033[0m
 
@@ -46,7 +45,6 @@ NC     := \033[0m
         test benchmark benchmark-viz profile
 
 all: distribute
-	@echo "$(GREEN)Profiling...$(NC)"
 	@./scripts/run_all.sh $(ARGS)
 
 # Dynamic Help Generation
@@ -66,13 +64,13 @@ $(BUILD_DIR)/CMakeCache.txt: CMakeLists.txt
 		-DCMAKE_CUDA_ARCHITECTURES=$(CUDA_ARCH)
 
 build: $(BUILD_DIR)/CMakeCache.txt ## Build the project (incremental)
-	@echo "$(GREEN)Building project...$(NC)"
-	@echo "Using ccache: $(if $(CCACHE_EXE),yes,no). Using ninja : $(if $(NINJA_EXE),yes,no)"
+	@echo "$(BLUE)▶$(NC) Building project..."
 	@cmake --build $(BUILD_DIR) -j $(JOBS)
+	@echo "$(GREEN)✓$(NC) Build complete"
 
 clean: ## Clean build artifacts
-	@echo "$(YELLOW)Cleaning build directory...$(NC)"
 	@rm -rf $(BUILD_DIR)
+	@echo "$(GREEN)✓$(NC) Clean complete"
 
 compile-commands: $(BUILD_DIR)/CMakeCache.txt ## Link compile_commands.json for LSP support
 	@ln -sf $(BUILD_DIR)/compile_commands.json .
@@ -86,40 +84,35 @@ generate-hostfile: ## Generate MPI hostfile from NODES variable
 	@cat $(HOSTFILE)
 
 distribute: build ## Deploy binaries to nodes using rsync (Fast)
-	@echo "$(GREEN)Distributing binaries (using rsync)...$(NC)"
+	@echo "$(BLUE)▶$(NC) Distributing binaries..."
 	@for node in $(NODES); do \
-		echo "$(BLUE)Syncing to $$node...$(NC)"; \
-		ssh $(REMOTE_USER)@$$node "mkdir -p $(REMOTE_DIR)"; \
-		rsync -azP --delete $(BUILD_DIR)/bin $(BUILD_DIR)/lib $(REMOTE_USER)@$$node:$(REMOTE_DIR)/; \
+		ssh $(REMOTE_USER)@$$node "mkdir -p $(REMOTE_DIR)" 2>/dev/null; \
+		rsync -azP --delete $(BUILD_DIR)/bin $(BUILD_DIR)/lib $(REMOTE_USER)@$$node:$(REMOTE_DIR)/ 2>&1 | grep -v "^sending\|^sent\|^total" || true; \
 	done
-	@echo "$(GREEN)Distribution complete!$(NC)"
+	@echo "$(GREEN)✓$(NC) Distribution complete"
 
 check-nodes: ## Verify SSH connectivity to nodes
-	@echo "$(GREEN)Checking node connectivity...$(NC)"
+	@echo "$(BLUE)Checking node connectivity...$(NC)"
 	@for node in $(NODES); do \
 		printf "  %-15s " "$$node:"; \
 		ssh -o ConnectTimeout=3 $(REMOTE_USER)@$$node "echo 'OK'" >/dev/null 2>&1 \
-		&& echo "$(GREEN)✓$(NC)" || echo "$(YELLOW)✗$(NC)"; \
+		&& echo "$(GREEN)✓$(NC)" || echo "✗"; \
 	done
 
 # --- Execution Wrappers ---
 
 test: distribute ## Run distributed tests
-	@echo "$(GREEN)Running distributed tests...$(NC)"
 	@./scripts/run_tests.sh $(ARGS)
 
 benchmark: distribute ## Run benchmarks
-	@echo "$(GREEN)Running benchmarks...$(NC)"
 	@./scripts/run_benchmark.sh $(ARGS)
 
 profile: distribute ## Profile implementations
-	@echo "$(GREEN)Profiling...$(NC)"
 	@./scripts/run_profiling.sh $(ARGS)
 
 run-distributed:
 	@mpirun -np 2 --host localhost,10.0.0.2 --mca btl_tcp_if_include ens5 --mca oob_tcp_if_include ens5 $(ARGS)
 
 microbenchmark: distribute ## Run microbenchmark tool (use: make microbenchmark -- -n 1000 -i cuda)
-	@echo "$(GREEN)Running microbenchmark...$(NC)"
 	$(MAKE) run-distributed ARGS="$(REMOTE_DIR)/bin/microbenchmark $(ARGS)"
 

@@ -222,11 +222,9 @@ public:
 
 // Helper to register a specific simulator with a list of configurations
 void RegisterSimulator(std::string name, SorterFactory factory, const std::vector<BenchUtils::TestConfig>& configs) {
-    std::cout << "Registering " << name << " with " << configs.size() << " configs." << std::endl;
     for (const auto& cfg : configs) {
         std::string testName = name + "/" + BenchUtils::DistToString(cfg.dist) + "/" + std::to_string(cfg.size) + "/" + std::to_string(cfg.maxVal);
         
-        // Register the benchmark dynamically
         auto* b = benchmark::RegisterBenchmark(testName.c_str(), 
             [factory, cfg](benchmark::State& st) {
                 SortFixture fixture;
@@ -235,7 +233,6 @@ void RegisterSimulator(std::string name, SorterFactory factory, const std::vecto
                 fixture.TearDown(st);
             });
             
-        // Apply configuration specifics
         b->Unit(benchmark::kMillisecond);
         if (cfg.iterations > 0) {
             b->Iterations(cfg.iterations);
@@ -335,26 +332,16 @@ int main(int argc, char** argv) {
                       { return createOptimizedCudaMpiSnpSort(PartitionerType::RED_BLUE_BFS); }, Suites::Medium);
 
     // --- EXECUTION PHASE ---
-    if (rank == 0) {
-        std::cout << "SNP Benchmark Suite Initialized." << std::endl;
-        std::cout << "Usage: ./bench --benchmark_filter=<Regex>" << std::endl;
-        std::cout << "Examples:" << std::endl; 
-        std::cout << "  ./bench --benchmark_filter=\"Cuda\"     (Run only CUDA tests)" << std::endl;
-        std::cout << "  ./bench --benchmark_filter=\"Small\"    (Run only small inputs)" << std::endl;
-    }
-
-    // Only rank 0 initializes benchmark arguments to handle output file writing
+    // Only rank 0 initializes benchmark with args to handle output file writing
     if (rank == 0) {
         ::benchmark::Initialize(&argc, argv);
         ::benchmark::RunSpecifiedBenchmarks();
     } else {
-        // Non-root ranks: Initialize with minimal args (no output file arguments)
-        // This prevents non-root ranks from attempting to write to output files
+        // Non-root ranks: minimal args to prevent file output
         int argc_minimal = 1;
         char* argv_minimal[] = {argv[0]};
         ::benchmark::Initialize(&argc_minimal, argv_minimal);
         
-        // Use a null reporter to suppress all output
         class NullReporter : public ::benchmark::BenchmarkReporter {
             bool ReportContext(const Context&) override { return true; }
             void ReportRuns(const std::vector<Run>&) override {}

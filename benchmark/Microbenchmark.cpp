@@ -42,25 +42,18 @@ std::unique_ptr<ISort> createSorter(const std::string& impl) {
 }
 
 void printUsage(const char* prog) {
-    std::cout << "Usage: " << prog << " [options]\n"
-              << "\nOptions:\n"
-              << "  -n <size>    Input size (default: 100)\n"
-              << "  -i <impl>    Implementation (default: cpu)\n"
-              << "  -m <max>     Maximum value (default: size)\n"
-              << "  -s <seed>    Random seed (default: 42)\n"
-              << "  -c           Export CSV format\n"
-              << "  -h           Show this help\n"
-              << "\nImplementations:\n"
-              << "  cpu              Naive CPU implementation\n"
-              << "  sparse-cuda      Sparse CUDA implementation\n"
-              << "  optimized-cuda             Single-GPU CUDA implementation\n"
-              << "  naive-cuda-mpi   Naive distributed CUDA+MPI\n"
-              << "  optimized-cuda-mpi         Optimized CUDA+MPI (linear partitioner)\n"
-              << "  optimized-cuda-mpi-louvain CUDA+MPI (Louvain partitioner)\n"
-              << "  optimized-cuda-mpi-redblue CUDA+MPI (Red-Blue BFS partitioner)\n"
-              << "\nExample:\n"
-              << "  " << prog << " -n 1000 -i cuda\n"
-              << "  mpirun -np 4 " << prog << " -n 5000 -i optimized-cuda-mpi\n";
+    std::cout << "Usage: " << prog << " [options]\n\n"
+              << "Options:\n"
+              << "  -n <size>  Input size (default: 100)\n"
+              << "  -i <impl>  Implementation (default: cpu)\n"
+              << "  -m <max>   Maximum value (default: size)\n"
+              << "  -s <seed>  Random seed (default: 42)\n"
+              << "  -c         Export CSV format\n"
+              << "  -h         Show help\n\n"
+              << "Implementations:\n"
+              << "  cpu, sparse-cuda, optimized-cuda, naive-cuda-mpi,\n"
+              << "  optimized-cuda-mpi, optimized-cuda-mpi-louvain, optimized-cuda-mpi-redblue\n\n"
+              << "Example: " << prog << " -n 1000 -i optimized-cuda\n";
 }
 
 int main(int argc, char** argv) {
@@ -107,16 +100,12 @@ int main(int argc, char** argv) {
     
     // Print header (rank 0 only)
     if (rank == 0) {
-        std::cout << "╔════════════════════════════════════════════════════╗\n";
-        std::cout << "║   SNP System Microbenchmark - Performance Tool    ║\n";
-        std::cout << "╚════════════════════════════════════════════════════╝\n\n";
-        std::cout << "Configuration:\n";
-        std::cout << "  Implementation: " << implementation << "\n";
-        std::cout << "  Input Size: " << input_size << "\n";
-        std::cout << "  Max Value: " << max_value << "\n";
-        std::cout << "  Random Seed: " << seed << "\n";
-        std::cout << "  MPI Ranks: " << world_size << "\n";
-        std::cout << "\n";
+        std::cout << "══════════════════════════════════════════════════════\n"
+                  << "  SNP Microbenchmark\n"
+                  << "══════════════════════════════════════════════════════\n"
+                  << "  Implementation: " << implementation << "\n"
+                  << "  Input Size: " << input_size << "\n"
+                  << "  MPI Ranks: " << world_size << "\n\n";
     }
     
     // Generate random data
@@ -138,11 +127,6 @@ int main(int argc, char** argv) {
     }
     
     // Run sorting
-    if (rank == 0) {
-        std::cout << "Running sort...\n";
-    }
-    
-    
     sorter->load(data.data(), data.size());
     std::vector<int> result = sorter->execute();
     
@@ -150,10 +134,10 @@ int main(int argc, char** argv) {
     bool success = true;
     if (rank == 0) {
         if (!std::is_sorted(result.begin(), result.end())) {
-            std::cerr << "ERROR: Result is not sorted!\n";
+            std::cerr << "✗ ERROR: Result is not sorted!\n";
             success = false;
         } else {
-            std::cout << "✓ Sort verification: PASSED\n\n";
+            std::cout << "✓ Sort verification passed\n\n";
         }
     }
     
@@ -162,49 +146,32 @@ int main(int argc, char** argv) {
     
     if (rank == 0) {
         if (csv_format) {
-            // CSV output
-            std::cout << "\nCSV Format:\n";
-            std::cout << PerformanceMetrics::csvHeader() << "\n";
-            std::cout << metrics.toCSV() << "\n";
+            std::cout << "\n" << PerformanceMetrics::csvHeader() << "\n"
+                     << metrics.toCSV() << "\n";
         } else {
-            // Human-readable report
-            std::cout << "═══════════════════════════════════════════════════\n";
-            std::cout << metrics.toReport(implementation + " Sorter");
-            std::cout << "═══════════════════════════════════════════════════\n";
+            std::cout << "══════════════════════════════════════════════════════\n"
+                     << metrics.toReport(implementation + " Sorter")
+                     << "══════════════════════════════════════════════════════\n";
             
             // Additional analysis
-            std::cout << "\n[Performance Analysis]\n";
-            if (metrics.steps_executed > 0) {
-                std::cout << "  Throughput: " << std::fixed << std::setprecision(2)
-                         << metrics.throughput_steps_per_second() << " steps/sec\n";
-            }
-            
-            if (metrics.cuda.has_data()) {
-                double kernel_pct = metrics.cuda.kernel_time_ms / metrics.total_time_ms * 100.0;
-                double memory_pct = metrics.cuda.memory_transfer_time_ms / metrics.total_time_ms * 100.0;
-                std::cout << "  GPU Utilization:\n";
-                std::cout << "    Kernel: " << std::setprecision(1) << kernel_pct << "%\n";
-                std::cout << "    Memory: " << memory_pct << "%\n";
-            }
-            
-            if (metrics.mpi.has_data()) {
-                double comm_overhead = metrics.communication_percentage();
-                std::cout << "  Communication Overhead: " 
-                         << std::setprecision(1) << comm_overhead << "%\n";
+            if (metrics.steps_executed > 0 || metrics.cuda.has_data() || metrics.mpi.has_data()) {
+                std::cout << "\nPerformance Analysis:\n";
                 
-                if (metrics.mpi.total_messages_sent > 0) {
-                    double avg_msg_size = (double)metrics.mpi.total_bytes_sent / metrics.mpi.total_messages_sent;
-                    std::cout << "  Avg Message Size: " 
-                             << std::setprecision(0) << avg_msg_size << " bytes\n";
+                if (metrics.steps_executed > 0) {
+                    std::cout << "  Throughput: " << std::fixed << std::setprecision(2)
+                             << metrics.throughput_steps_per_second() << " steps/sec\n";
                 }
                 
-                if (metrics.algorithm.cross_rank_synapses > 0 && metrics.algorithm.local_neurons > 0) {
-                    double cross_ratio = (double)metrics.algorithm.cross_rank_synapses / metrics.algorithm.local_neurons;
-                    std::cout << "  Cross-Rank Edges per Neuron: " 
-                             << std::setprecision(2) << cross_ratio << "\n";
+                if (metrics.cuda.has_data()) {
+                    double kernel_pct = metrics.cuda.kernel_time_ms / metrics.total_time_ms * 100.0;
+                    std::cout << "  GPU Kernel Time: " << std::setprecision(1) << kernel_pct << "%\n";
+                }
+                
+                if (metrics.mpi.has_data()) {
+                    std::cout << "  Communication Overhead: " 
+                             << std::setprecision(1) << metrics.communication_percentage() << "%\n";
                 }
             }
-            
             std::cout << "\n";
         }
     }

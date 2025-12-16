@@ -62,24 +62,18 @@ void profileImplementation(const ProfileConfig& config, int rank, int worldSize)
     // Validate that we have enough processes for distributed implementations
     if (config.isDistributed && worldSize < 2) {
         if (rank == 0) {
-            std::cout << "[SKIP] " << config.name 
-                      << " requires at least 2 MPI processes (current: " << worldSize << ")\n";
+            std::cout << "[SKIP] " << config.name << " (needs 2+ MPI processes)\n";
         }
         return;
     }
     
     if (rank == 0) {
-        std::cout << "\n=======================================================\n";
-        std::cout << "Profiling: " << config.name << "\n";
-        std::cout << "Array Size: " << config.arraySize << "\n";
-        std::cout << "Max Value: " << config.maxValue << "\n";
-        std::cout << "MPI Processes: " << worldSize << "\n";
-        if (config.steps > 0) {
-            std::cout << "Steps: " << config.steps << "\n";
-        } else {
-            std::cout << "Steps: max (run to completion)\n";
-        }
-        std::cout << "=======================================================\n";
+        std::cout << "\n══════════════════════════════════════════════════════\n";
+        std::cout << "▶ " << config.name << "\n";
+        std::cout << "  Size: " << config.arraySize 
+                  << " | Processes: " << worldSize
+                  << " | Steps: " << (config.steps > 0 ? std::to_string(config.steps) : "max") << "\n";
+        std::cout << "══════════════════════════════════════════════════════\n";
     }
     
     // Generate test data
@@ -97,46 +91,27 @@ void profileImplementation(const ProfileConfig& config, int rank, int worldSize)
     // Load data (preparation phase - not profiled by nsys)
     sorter->load(data.data(), data.size());
     
-    if (rank == 0) {
-        std::cout << "Starting execution...\n";
-    }
-    
-    
     std::vector<int> results;
     // Execute sorting (THIS IS THE SECTION PROFILED)
+    cudaProfilerStart();
     if (config.steps > 0) {
-        if (rank == 0) {
-            std::cout << "Executing for " << config.steps << " steps...\n";
-        }
-        cudaProfilerStart();
         simPtr->step(config.steps);
-        cudaProfilerStop();
     } else {
-        if (rank == 0) {
-            std::cout << "Executing to completion...\n";
-        }
-        cudaProfilerStart();
         results = sorter->execute();
-        cudaProfilerStop();
     }
+    cudaProfilerStop();
 
     // Report on rank 0
     if (rank == 0) {
-        std::cout << "Execution completed.\n";
-
-        if (isSorted(results)) {
-            if (rank == 0) {
-                std::cout << "Result: Array is sorted correctly.\n";
-            }
-        } else {
-            if (rank == 0) {
-                std::cerr << "Result: Array is NOT sorted correctly!\n";
-            }
+        if (!results.empty()) {
+            std::cout << (isSorted(results) ? "✓" : "✗")
+                     << " Verification: " 
+                     << (isSorted(results) ? "sorted" : "NOT sorted") << "\n";
         }
         
         // Print performance report
         std::string perfReport = simPtr->getPerformanceReport();
-        std::cout << "\nPerformance Report:\n" << perfReport << "\n";
+        std::cout << "\n" << perfReport << "\n";
     }
 }
 
@@ -176,17 +151,10 @@ int main(int argc, char** argv) {
         numSteps = std::atoi(argv[2]);
     }
     if (argc > 3) {
-        // Parse partitioner type from command line
         partitionerType = IPartitioner::parsePartitionerType(argv[3], PartitionerType::LINEAR);
-        if (rank == 0) {
-            std::cout << "Using partitioner: " << IPartitioner::getPartitionerName(partitionerType) << "\n";
-        }
     }
     if (argc > 4) {
         arraySize = std::atoi(argv[4]);
-        if (rank == 0) {
-            std::cout << "Using array size: " << arraySize << "\n";
-        }
     }
     
     // Define array parameters
@@ -258,37 +226,22 @@ int main(int argc, char** argv) {
     // ========================================================================
     
     if (rank == 0) {
-        std::cout << "\n";
-        std::cout << "╔════════════════════════════════════════════════════════╗\n";
-        std::cout << "║       SNP System Profiling Suite                      ║\n";
-        std::cout << "║       NVIDIA Nsight Systems CLI                       ║\n";
-        std::cout << "╚════════════════════════════════════════════════════════╝\n";
-        std::cout << "\n";
-        std::cout << "MPI Configuration: " << worldSize << " process(es)\n";
-        std::cout << "Implementations to profile: " << profileConfigs.size() << "\n";
+        std::cout << "\n══════════════════════════════════════════════════════\n";
+        std::cout << "  SNP System Profiling Suite\n";
+        std::cout << "══════════════════════════════════════════════════════\n";
+        std::cout << "  Processes: " << worldSize 
+                  << " | Implementations: " << profileConfigs.size() << "\n\n";
         
         if (profileConfigs.empty()) {
-            std::cout << "\nNo implementations matched filter: '" << targetImpl << "'\n";
-            std::cout << "\nUsage: " << argv[0] << " [implementation] [steps] [partitioner] [array_size]\n";
-            std::cout << "\nAvailable implementations:\n";
-            std::cout << "  cpu           - Profile CPU implementation only\n";
-            std::cout << "  optimized-cuda          - Profile CUDA implementation only\n";
-            std::cout << "  sparse-cuda   - Profile Sparse CUDA implementation only\n";
-            std::cout << "  naive-cuda-mpi- Profile Naive CUDA+MPI implementation only\n";
-            std::cout << "  optimized-cuda-mpi      - Profile CUDA+MPI implementation only\n";
-            std::cout << "  mpi           - Profile all MPI implementations\n";
-            std::cout << "  all           - Profile all implementations\n";
-            std::cout << "  (no arg)      - Profile all implementations\n";
-            std::cout << "\nPartitioner options (for MPI implementations):\n";
-            std::cout << "  linear        - Linear (block) partitioning (default)\n";
-            std::cout << "  louvain       - Louvain community detection\n";
-            std::cout << "  red-blue      - Red-Blue pebbling (BFS)\n";
-            std::cout << "\nArray size (default: 2048):\n";
-            std::cout << "  N             - Array size (positive integer)\n\n";
-            std::cout << "\nExamples:\n";
-            std::cout << "  " << argv[0] << " cuda-mpi 100 louvain 4096  # Profile CUDA+MPI with Louvain for 100 steps, array size 4096\n";
-            std::cout << "  " << argv[0] << " mpi 0 red-blue 1024        # Profile all MPI with Red-Blue to completion, array size 1024\n";
-            std::cout << "  " << argv[0] << " cuda 0 linear 8192         # Profile CUDA to completion, array size 8192\n\n";
+            std::cout << "No implementations matched: '" << targetImpl << "'\n\n";
+            std::cout << "Usage: " << argv[0] << " [impl] [steps] [partitioner] [size]\n\n";
+            std::cout << "Implementations:\n";
+            std::cout << "  cpu, optimized-cuda, sparse-cuda, naive-cuda-mpi, optimized-cuda-mpi, mpi, all\n\n";
+            std::cout << "Partitioners (MPI only):\n";
+            std::cout << "  linear (default), louvain, red-blue\n\n";
+            std::cout << "Examples:\n";
+            std::cout << "  " << argv[0] << " optimized-cuda-mpi 100 louvain 4096\n";
+            std::cout << "  " << argv[0] << " optimized-cuda 0 linear 8192\n\n";
         }
     }
     
@@ -297,11 +250,9 @@ int main(int argc, char** argv) {
     }
     
     if (rank == 0) {
-        std::cout << "\n";
-        std::cout << "╔════════════════════════════════════════════════════════╗\n";
-        std::cout << "║       Profiling Complete                               ║\n";
-        std::cout << "╚════════════════════════════════════════════════════════╝\n";
-        std::cout << "\n";
+        std::cout << "\n══════════════════════════════════════════════════════\n";
+        std::cout << "  ✓ Profiling Complete\n";
+        std::cout << "══════════════════════════════════════════════════════\n\n";
     }
     
     MPI_Finalize();
