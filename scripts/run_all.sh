@@ -38,26 +38,29 @@ echo ""
 
 # Profile implementations
 log_step "Profiling implementations with Nsight Systems"
-for impl in "sparse-cuda" "optimized-cuda"; do
-    log_info "Profiling $impl"
-    make profile ARGS="-i $impl -p nsys" && sleep 1
-done
 
-for part in "linear" "louvain" "red-blue"; do
-    log_info "Profiling naive-cuda-mpi ($part)"
-    make profile ARGS="-i naive-cuda-mpi -p nsys -pt $part" && sleep 1
-    log_info "Profiling optimized-cuda-mpi ($part)"
-    make profile ARGS="-i optimized-cuda-mpi -p nsys -pt $part" && sleep 1
-done
+implementations=(
+    "cpu"
+    "optimized-cuda"
+    "sparse-cuda"
+    "naive-cuda-mpi:linear"
+    "naive-cuda-mpi:louvain"
+    "naive-cuda-mpi:rb"
+    "optimized-cuda-mpi:linear"
+    "optimized-cuda-mpi:louvain"
+    "optimized-cuda-mpi:red-blue"
+)
+make profile ARGS="-p nsys -i $(IFS=,; echo "${implementations[*]}")" && sleep 1
 log_success "Nsight Systems profiling complete"
 echo ""
 
 # NCU profiling
 log_step "Collecting kernel metrics with Nsight Compute"
-for impl in "sparse-cuda" "optimized-cuda"; do
-    log_info "Profiling $impl kernels"
-    make profile ARGS="-i $impl -p ncu -s 3" && sleep 1
-done
+implementations=(
+    "optimized-cuda"
+    "sparse-cuda"
+)
+make profile ARGS="-p ncu -i $(IFS=,; echo "${implementations[*]}")" && sleep 1
 log_success "Nsight Compute profiling complete"
 
 echo ""

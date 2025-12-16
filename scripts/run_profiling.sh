@@ -13,6 +13,7 @@ PROFILE_EXEC="${BUILD_DIR}/bin/snp_profile"
 
 mkdir -p "$OUTPUT_DIR"
 
+
 # Defaults
 IMPLEMENTATIONS=("optimized-cuda-mpi")
 PARTITIONERS=("linear")
@@ -69,7 +70,13 @@ get_output_dir() {
     local tool="$1"
     local impl="$2"
     local partitioner="$3"
-    echo "${OUTPUT_DIR}/${tool}/${BATCH_TIMESTAMP}/${impl}-${partitioner}"
+    
+    # Only include partitioner in folder name for MPI implementations
+    if [[ "$impl" == *"mpi"* ]]; then
+        echo "${OUTPUT_DIR}/${tool}/${BATCH_TIMESTAMP}/${impl}-${partitioner}"
+    else
+        echo "${OUTPUT_DIR}/${tool}/${BATCH_TIMESTAMP}/${impl}"
+    fi
 }
 
 get_base_filename() {
@@ -97,8 +104,7 @@ extract_nsys_stats() {
     for rep_file in $rep_files; do
         local base="${rep_file%.nsys-rep}"
         nsys stats --report cuda_api_sum,cuda_gpu_kern_sum,cuda_gpu_mem_time_sum,mpi_sum,nvtx_sum \
-            --format csv --output "${base}_stats" "$rep_file" 2>/dev/null || true
-        echo "  $(basename ${base}_stats.csv)"
+            --format csv --quiet --output "${base}_stats" "$rep_file" 2>/dev/null || true
     done
     
     log_success "Metrics exported"
@@ -108,25 +114,51 @@ run_mpi_profiler() {
     local tool="$1"
     local impl="$2"
     local partitioner="$3"
+    local output_dir=$(get_output_dir "$tool" "$impl" "$partitioner")
     local base=$(get_base_filename "$impl" "$tool" "$partitioner")
-    local output="${base}_%h_rank%q{OMPI_COMM_WORLD_RANK}"
     
-    local mpi_cmd="mpirun -np 2 --host localhost,10.0.0.2 \
-        --mca btl_tcp_if_include ens5 --mca oob_tcp_if_include ens5"
+    # Determine if this is an MPI implementation
+    local is_mpi=false
+    [[ "$impl" == *"mpi"* ]] && is_mpi=true
     
+    # Set output filename pattern based on whether it's MPI
+    local output="$base"
+    if [ "$is_mpi" = true ]; then
+        output="${base}_%h_rank%q{OMPI_COMM_WORLD_RANK}"
+    fi
+    
+    # Build profiler command
     local profiler_cmd=""
     if [ "$tool" == "nsys" ]; then
         profiler_cmd="/usr/local/cuda/bin/nsys profile --capture-range=cudaProfilerApi \
             --trace=cuda,mpi,nvtx,osrt --output=$output \
-            --force-overwrite=true --stats=true $NSYS_OPTS"
+            --force-overwrite=true $NSYS_OPTS"
     else
         local ncu_opts="${NCU_OPTS:---set full --call-stack}"
         profiler_cmd="/usr/local/cuda/bin/ncu $ncu_opts --export $output --force-overwrite"
     fi
     
-    local app_cmd="$PROFILE_EXEC $impl ${STEPS:-0} $partitioner $ARRAY_SIZE"
+    local app_cmd
+    if [ "$is_mpi" = true ]; then
+        app_cmd="$PROFILE_EXEC $impl ${STEPS:-0} $partitioner $ARRAY_SIZE"
+    else
+        # Non-MPI implementations don't take a partitioner argument
+        app_cmd="$PROFILE_EXEC $impl ${STEPS:-0} $ARRAY_SIZE"
+    fi
     
-    eval "$mpi_cmd $profiler_cmd $app_cmd" 2>&1 | grep -v "^Collecting\|^==" || true
+    # Execute with or without MPI
+    if [ "$is_mpi" = true ]; then
+        for node in "localhost" "10.0.0.2"; do
+            ssh shared@"$node" "mkdir -p $output_dir"  2>&1 || true
+        done
+        # Suppress MPI error messages when process exits during cleanup
+        local mpi_cmd="mpirun -np 2 --host localhost,10.0.0.2 \
+            --mca btl_tcp_if_include ens5 --mca oob_tcp_if_include ens5 \
+            --mca orte_abort_on_non_zero_status 0"
+        eval "$mpi_cmd $profiler_cmd $app_cmd" 2>&1 | grep -v "^Collecting\|^==\|Primary job\|mpirun detected" || true
+    else
+        eval "$profiler_cmd $app_cmd" 2>&1 | grep -v "^Collecting\|^==" || true
+    fi
     
     log_success "Profile saved: ${base}*"
     
@@ -138,7 +170,7 @@ run_profiling_for_impl() {
     local partitioner="$2"
     
     echo ""
-    log_step "Profiling: $impl (partitioner: $partitioner)"
+    log_step "Profiling: $impl"
     
     case $PROFILER in
         nsys)
@@ -202,7 +234,7 @@ while [[ $# -gt 0 ]]; do
                     IMPLEMENTATIONS+=("${item%%:*}")
                     PARTITIONERS+=("${item##*:}")
                 else
-                    # No partitioner specified, use default
+                    # No partitioner specified, use default (ignored for non-MPI)
                     IMPLEMENTATIONS+=("$item")
                     PARTITIONERS+=("linear")
                 fi
