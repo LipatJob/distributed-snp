@@ -232,7 +232,7 @@ static __global__ void resetKernel(DeviceNeuronData neurons) {
     neurons.current_output[idx] = 0;
 }
 
-class CudaSnpSimulator : public ISnpSimulator {
+class OptimizedCudaSnpSimulator : public ISnpSimulator {
 private:
     SnpSystemConfig config;
     int num_neurons = 0;
@@ -253,9 +253,9 @@ private:
     int synapse_grid = 0;
 
 public:
-    CudaSnpSimulator() = default;
+    OptimizedCudaSnpSimulator() = default;
     
-    ~CudaSnpSimulator() {
+    ~OptimizedCudaSnpSimulator() {
         cleanup();
     }
     
@@ -283,7 +283,7 @@ public:
             
             return true;
         } catch (const std::exception& e) {
-            std::cerr << "CudaSnpSimulator Error: " << e.what() << std::endl;
+            std::cerr << "OptimizedCudaSnpSimulator Error: " << e.what() << std::endl;
             return false;
         }
     }
@@ -444,6 +444,6 @@ private:
     }
 };
 
-std::unique_ptr<ISnpSimulator> createCudaSimulator() {
-    return std::make_unique<CudaSnpSimulator>();
+std::unique_ptr<ISnpSimulator> createOptimizedCudaSimulator() {
+    return std::make_unique<OptimizedCudaSnpSimulator>();
 }

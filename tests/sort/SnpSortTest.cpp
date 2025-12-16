@@ -6,10 +6,10 @@
 
 enum class SortBackend {
     NAIVE_CPU_SNP_SORT,
-    CUDA_SNP_SORT,
     SPARSE_CUDA_SNP_SORT,
-    CUDA_MPI_SNP_SORT,
-    NAIVE_CUDA_MPI_SNP_SORT
+    OPTIMIZED_CUDA_SNP_SORT,
+    NAIVE_CUDA_MPI_SNP_SORT,
+    OPTIMIZED_CUDA_MPI_SNP_SORT,
 };
 
 // Factory wrapper for different backends
@@ -17,14 +17,14 @@ std::unique_ptr<ISort> createSorter(SortBackend backend) {
     switch (backend) {
         case SortBackend::NAIVE_CPU_SNP_SORT:
             return createNaiveCpuSnpSort();
-        case SortBackend::CUDA_SNP_SORT:
-            return createCudaSnpSort();
         case SortBackend::SPARSE_CUDA_SNP_SORT:
             return createSparseCudaSnpSort();
+        case SortBackend::OPTIMIZED_CUDA_SNP_SORT:
+            return createOptimizedCudaSnpSort();
         case SortBackend::NAIVE_CUDA_MPI_SNP_SORT:
             return createNaiveCudaMpiSnpSort();
-        case SortBackend::CUDA_MPI_SNP_SORT:
-            return createCudaMpiSnpSort();
+        case SortBackend::OPTIMIZED_CUDA_MPI_SNP_SORT:
+            return createOptimizedCudaMpiSnpSort();
         default:
             return nullptr;
     }
@@ -161,18 +161,18 @@ INSTANTIATE_TEST_SUITE_P(
     SnpSortTest,
     ::testing::Values(
         SortBackend::NAIVE_CPU_SNP_SORT,
-        SortBackend::CUDA_SNP_SORT,
-        SortBackend::SPARSE_CUDA_SNP_SORT
-        // SortBackend::NAIVE_CUDA_MPI_SNP_SORT,
-        // SortBackend::CUDA_MPI_SNP_SORT
+        SortBackend::SPARSE_CUDA_SNP_SORT,
+        SortBackend::OPTIMIZED_CUDA_SNP_SORT,
+        SortBackend::NAIVE_CUDA_MPI_SNP_SORT,
+        SortBackend::OPTIMIZED_CUDA_MPI_SNP_SORT
     ),
     [](const ::testing::TestParamInfo<SortBackend>& info) {
         switch (info.param) {
             case SortBackend::NAIVE_CPU_SNP_SORT: return "NaiveCpuSnpSort";
-            case SortBackend::CUDA_SNP_SORT: return "CudaSnpSort";
             case SortBackend::SPARSE_CUDA_SNP_SORT: return "SparseCudaSnpSort";
+            case SortBackend::OPTIMIZED_CUDA_SNP_SORT: return "OptimizedCudaSnpSort";
             case SortBackend::NAIVE_CUDA_MPI_SNP_SORT: return "NaiveCudaMpiSnpSort";
-            case SortBackend::CUDA_MPI_SNP_SORT: return "CudaMpiSnpSort";
+            case SortBackend::OPTIMIZED_CUDA_MPI_SNP_SORT: return "OptimizedCudaMpiSnpSort";
             default: return "Unknown";
         }
     }

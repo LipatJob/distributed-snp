@@ -6,8 +6,8 @@
  * Usage: ./microbenchmark -n <size> -i <implementation>
  */
 
-#include "sort/ISort.hpp"
-#include "snp/PerformanceMetrics.hpp"
+#include "ISort.hpp"
+#include "PerformanceMetrics.hpp"
 #include <iostream>
 #include <vector>
 #include <random>
@@ -23,18 +23,18 @@
 std::unique_ptr<ISort> createSorter(const std::string& impl) {
     if (impl == "cpu") {
         return createNaiveCpuSnpSort();
-    } else if (impl == "cuda") {
-        return createCudaSnpSort();
     } else if (impl == "sparse-cuda") {
         return createSparseCudaSnpSort();
+    } else if (impl == "optimized-cuda") {
+        return createOptimizedCudaSnpSort();
     } else if (impl == "naive-cuda-mpi") {
         return createNaiveCudaMpiSnpSort();
-    } else if (impl == "cuda-mpi") {
-        return createCudaMpiSnpSort();
-    } else if (impl == "cuda-mpi-louvain") {
-        return createCudaMpiSnpSort(PartitionerType::LOUVAIN);
-    } else if (impl == "cuda-mpi-redblue") {
-        return createCudaMpiSnpSort(PartitionerType::RED_BLUE_BFS);
+    } else if (impl == "optimized-cuda-mpi") {
+        return createOptimizedCudaMpiSnpSort();
+    } else if (impl == "optimized-cuda-mpi-louvain") {
+        return createOptimizedCudaMpiSnpSort(PartitionerType::LOUVAIN);
+    } else if (impl == "optimized-cuda-mpi-redblue") {
+        return createOptimizedCudaMpiSnpSort(PartitionerType::RED_BLUE_BFS);
     } else {
         std::cerr << "Unknown implementation: " << impl << "\n";
         return nullptr;
@@ -52,15 +52,15 @@ void printUsage(const char* prog) {
               << "  -h           Show this help\n"
               << "\nImplementations:\n"
               << "  cpu              Naive CPU implementation\n"
-              << "  cuda             Single-GPU CUDA implementation\n"
               << "  sparse-cuda      Sparse CUDA implementation\n"
+              << "  optimized-cuda             Single-GPU CUDA implementation\n"
               << "  naive-cuda-mpi   Naive distributed CUDA+MPI\n"
-              << "  cuda-mpi         Optimized CUDA+MPI (linear partitioner)\n"
-              << "  cuda-mpi-louvain CUDA+MPI (Louvain partitioner)\n"
-              << "  cuda-mpi-redblue CUDA+MPI (Red-Blue BFS partitioner)\n"
+              << "  optimized-cuda-mpi         Optimized CUDA+MPI (linear partitioner)\n"
+              << "  optimized-cuda-mpi-louvain CUDA+MPI (Louvain partitioner)\n"
+              << "  optimized-cuda-mpi-redblue CUDA+MPI (Red-Blue BFS partitioner)\n"
               << "\nExample:\n"
               << "  " << prog << " -n 1000 -i cuda\n"
-              << "  mpirun -np 4 " << prog << " -n 5000 -i cuda-mpi\n";
+              << "  mpirun -np 4 " << prog << " -n 5000 -i optimized-cuda-mpi\n";
 }
 
 int main(int argc, char** argv) {

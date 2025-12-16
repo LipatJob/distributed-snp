@@ -11,9 +11,9 @@ sudo sysctl kernel.perf_event_paranoid=1
 ssh shared@10.0.0.2 "sudo sysctl kernel.perf_event_paranoid=1"
 
 echo "Profiling all implementations..."
-make profile ARGS="-i cuda -p nsys"
-sleep 2
 make profile ARGS="-i sparse-cuda -p nsys"
+sleep 2
+make profile ARGS="-i optimized-cuda -p nsys"
 sleep 2
 make profile ARGS="-i naive-cuda-mpi -p nsys -pt linear"
 sleep 2
@@ -21,15 +21,15 @@ make profile ARGS="-i naive-cuda-mpi -p nsys -pt louvain"
 sleep 2
 make profile ARGS="-i naive-cuda-mpi -p nsys -pt red-blue"
 sleep 2
-make profile ARGS="-i cuda-mpi -p nsys -pt linear"
+make profile ARGS="-i optimized-cuda-mpi -p nsys -pt linear"
 sleep 2
-make profile ARGS="-i cuda-mpi -p nsys -pt louvain"
+make profile ARGS="-i optimized-cuda-mpi -p nsys -pt louvain"
 sleep 2
-make profile ARGS="-i cuda-mpi -p nsys -pt red-blue"
+make profile ARGS="-i optimized-cuda-mpi -p nsys -pt red-blue"
 sleep 2
 
 echo "Collecting NVIDIA Compute Utility profiles..."
-make profile ARGS="-i cuda -p ncu -s 3"
-sleep 2
 make profile ARGS="-i sparse-cuda -s 3"
+sleep 2
+make profile ARGS="-i optimized-cuda -p ncu -s 3"
 sleep 2

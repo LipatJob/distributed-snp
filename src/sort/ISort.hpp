@@ -1,6 +1,6 @@
 #include <memory>
 #include <vector>
-#include "../snp/IPartitioner.hpp"
+#include "../partitioner/IPartitioner.hpp"
 #include "../snp/PerformanceMetrics.hpp"
 
 /**
@@ -75,7 +75,7 @@ public:
 };
 
 std::unique_ptr<ISort> createNaiveCpuSnpSort();
-std::unique_ptr<ISort> createCudaSnpSort();
 std::unique_ptr<ISort> createSparseCudaSnpSort();
+std::unique_ptr<ISort> createOptimizedCudaSnpSort();
 std::unique_ptr<ISort> createNaiveCudaMpiSnpSort(PartitionerType pType = PartitionerType::LINEAR);
-std::unique_ptr<ISort> createCudaMpiSnpSort(PartitionerType pType = PartitionerType::LINEAR);
+std::unique_ptr<ISort> createOptimizedCudaMpiSnpSort(PartitionerType pType = PartitionerType::LINEAR);

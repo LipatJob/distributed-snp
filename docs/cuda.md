@@ -79,7 +79,7 @@ In `updateNeuronStatusKernel`, threads only need `delay_timer[]` and `is_open[]`
 ### Data Structures
 The simulator defines three main device structures:
 
-1.  **`DeviceNeuronData`**:
+1.  **`OptimizedCudaSnpSimulator`**:
     * `configuration`: The current spike count vector $C(k)$.
     * `delay_timer`: Tracks how many ticks remain before a neuron opens.
     * `is_open`: A boolean mask (stored as `char` for alignment) acting as the status vector $St(k)$.

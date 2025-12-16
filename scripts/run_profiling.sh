@@ -56,8 +56,8 @@ Profile SNP implementations using NVIDIA Nsight Systems and/or Nsight Compute.
 
 Options:
   -i, --implementation NAME  Implementation to profile (default: all)
-                            Options: cpu, cuda, sparse-cuda, naive-cuda-mpi,
-                                     cuda-mpi, mpi, all
+                            Options: cpu, optimized-cuda, sparse-cuda, naive-cuda-mpi,
+                                     optimized-cuda-mpi, mpi, all
   -n, --num-procs N         Number of MPI processes (default: 2)
   --hostfile FILE           Path to MPI hostfile (default: ./hostfile.txt)
   --no-hostfile             Don't use hostfile, run all on localhost
@@ -74,19 +74,19 @@ Options:
 
 Examples:
   $0                                     # Profile all with Nsight Systems
-  $0 -i cuda -p ncu                      # Profile CUDA with Nsight Compute
-  $0 -i cuda -p both                     # Profile CUDA with both tools
+  $0 -i optimized-cuda -p ncu                      # Profile CUDA with Nsight Compute
+  $0 -i optimized-cuda -p both                     # Profile CUDA with both tools
   $0 -i mpi -n 4 -p nsys                 # Profile MPI with Nsight Systems
   $0 -i sparse-cuda -p ncu --ncu-opts "--set full"  # Detailed kernel profiling
-  $0 -i cuda -s 100                      # Profile CUDA for 100 steps only
-  $0 -i cuda-mpi --partitioner louvain   # Profile CUDA+MPI with Louvain partitioner
+  $0 -i optimized-cuda -s 100                      # Profile CUDA for 100 steps only
+  $0 -i optimized-cuda-mpi --partitioner louvain   # Profile CUDA+MPI with Louvain partitioner
   $0 -i mpi -s 100 --partitioner red-blue # Profile MPI for 100 steps with Red-Blue
-  $0 -i cuda --array-size 4096           # Profile CUDA with array size 4096
-  $0 -i cuda-mpi -s 100 --partitioner louvain --array-size 8192  # Custom size with Louvain
+  $0 -i optimized-cuda --array-size 4096           # Profile CUDA with array size 4096
+  $0 -i optimized-cuda-mpi -s 100 --partitioner louvain --array-size 8192  # Custom size with Louvain
 
 Available Implementations:
   cpu           - NaiveCpuSnp (single process)
-  cuda          - CudaSnp (single process, requires GPU)
+  optimized-cuda          - CudaSnp (single process, requires GPU)
   sparse-cuda   - SparseCudaSnp (single process, requires GPU)
   naive-cuda-mpi- NaiveCudaMpiSnp (distributed, requires GPU)
   cuda-mpi      - CudaMpiSnp (distributed, requires GPU)
@@ -453,8 +453,8 @@ case $IMPLEMENTATION in
     cpu)
         run_profiling "cpu"
         ;;
-    cuda)
-        run_profiling "cuda"
+    optimized-cuda)
+        run_profiling "optimized-cuda"
         ;;
     sparse-cuda)
         run_profiling "sparse-cuda"
@@ -462,8 +462,8 @@ case $IMPLEMENTATION in
     naive-cuda-mpi)
         run_profiling "naive-cuda-mpi"
         ;;
-    cuda-mpi)
-        run_profiling "cuda-mpi"
+    optimized-cuda-mpi)
+        run_profiling "optimized-cuda-mpi"
         ;;
     *)
         echo -e "${RED}Error: Unknown implementation '$IMPLEMENTATION'${NC}"

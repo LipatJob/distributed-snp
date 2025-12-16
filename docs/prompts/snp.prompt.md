@@ -2,7 +2,7 @@ Create a parallel and distributed implementation of the spiking neural p system 
 
 Each node has a T4 GPU. Assume that the input size is large. The system must distribute the work among different nodes to maximize performance. It must also minimize the communication Process <-> Process, Processor <-> GPU, and GPU <-> Global Memory.
 
-Create an CudaMpiSnpSimulator class that implements the following interface. Make sure to keep the code simple and readable. Do not change anything but the implementation of the CudaMpiSnpSimulator class. You can add helper functions and classes as needed, but do not change the interface.
+Create an OptimizedCudaMpiSnpSimulator class that implements the following interface. Make sure to keep the code simple and readable. Do not change anything but the implementation of the OptimizedCudaMpiSnpSimulator class. You can add helper functions and classes as needed, but do not change the interface.
 
 ISnpSimulator.hpp
 ```

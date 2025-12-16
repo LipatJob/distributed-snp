@@ -1,11 +1,11 @@
 #include "ISnpSimulator.hpp"
 #include "SnpSystemConfig.hpp"
+#include "SnpSystemPermuter.hpp"
 #include "PerformanceMetrics.hpp"
 #include "IPartitioner.hpp"
 #include "LinearPartitioner.hpp"
 #include "LouvainPartitioner.hpp"
 #include "RedBluePartitioner.hpp"
-#include "SnpSystemPermuter.hpp"
 #include <mpi.h>
 #include <cuda_runtime.h>
 #include <vector>
@@ -45,7 +45,7 @@ namespace {
 // --- Device Structures ---
 
 // Local Neuron State (SoA)
-struct DeviceNeuronData {
+struct OptimizedCudaSnpSimulator {
     int* configuration;       // Current spike count
     int* initial_config;      // For reset
     char* is_open;            // Status (using char for byte alignment)
@@ -187,7 +187,7 @@ struct DeviceImportMapData {
 
 // 3. Propagate Spikes (Local Only)
 // Handles both immediate production and pending emissions that just unlocked
-__global__ void kPropagateLocal(DeviceNeuronData neurons, DeviceLocalSynapseData synapses) {
+__global__ void kPropagateLocal(OptimizedCudaSnpSimulator neurons, DeviceLocalSynapseData synapses) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= synapses.count) return;
 
@@ -212,7 +212,7 @@ __global__ void kPropagateLocal(DeviceNeuronData neurons, DeviceLocalSynapseData
 }
 
 // 4. Populate Export Buffer (For Remote Targets)
-__global__ void kPopulateExport(DeviceNeuronData neurons, DeviceExportSynapseData synapses, int* export_buffer) {
+__global__ void kPopulateExport(OptimizedCudaSnpSimulator neurons, DeviceExportSynapseData synapses, int* export_buffer) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= synapses.count) return;
 
@@ -233,7 +233,7 @@ __global__ void kPopulateExport(DeviceNeuronData neurons, DeviceExportSynapseDat
 }
 
 // 5. Apply Imported Spikes (From Other Ranks)
-__global__ void kApplyImports(DeviceNeuronData neurons, DeviceImportMapData imports, int* import_buffer) {
+__global__ void kApplyImports(OptimizedCudaSnpSimulator neurons, DeviceImportMapData imports, int* import_buffer) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= imports.count) return;
 
@@ -251,7 +251,7 @@ __global__ void kApplyImports(DeviceNeuronData neurons, DeviceImportMapData impo
 
 // 7. Fused kernel: UpdateStatus + SelectAndFire + Cleanup
 // This reduces kernel launch overhead by combining three operations
-__global__ void kUpdateSelectFireCleanup(DeviceNeuronData neurons, DeviceRuleData rules) {
+__global__ void kUpdateSelectFireCleanup(OptimizedCudaSnpSimulator neurons, DeviceRuleData rules) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= neurons.count) return;
 
@@ -288,7 +288,7 @@ __global__ void kUpdateSelectFireCleanup(DeviceNeuronData neurons, DeviceRuleDat
 }
 
 // 8. Separate cleanup kernel for after propagation
-__global__ void kCleanupAfterPropagation(DeviceNeuronData neurons) {
+__global__ void kCleanupAfterPropagation(OptimizedCudaSnpSimulator neurons) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= neurons.count) return;
 
@@ -298,7 +298,7 @@ __global__ void kCleanupAfterPropagation(DeviceNeuronData neurons) {
     }
 }
 
-__global__ void kResetNeurons(DeviceNeuronData neurons) {
+__global__ void kResetNeurons(OptimizedCudaSnpSimulator neurons) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= neurons.count) return;
     neurons.configuration[idx] = neurons.initial_config[idx];
@@ -313,7 +313,7 @@ __global__ void kResetNeurons(DeviceNeuronData neurons) {
 
 // --- Main Implementation Class ---
 
-class CudaMpiSnpSimulator : public ISnpSimulator {
+class OptimizedCudaMpiSnpSimulator : public ISnpSimulator {
 private:
     int mpi_rank, mpi_size;
     
@@ -327,7 +327,7 @@ private:
     std::vector<int> rank_counts;
 
     // Device Data
-    DeviceNeuronData d_neurons;
+    OptimizedCudaSnpSimulator d_neurons;
     DeviceRuleData d_rules;
     DeviceLocalSynapseData d_local_synapses;
     DeviceExportSynapseData d_export_synapses;
@@ -366,7 +366,7 @@ private:
     std::unique_ptr<IPartitioner> partitioner;
 
 public:
-    CudaMpiSnpSimulator() {
+    OptimizedCudaMpiSnpSimulator() {
         MPI_Comm_rank(MPI_COMM_WORLD, &mpi_rank);
         MPI_Comm_size(MPI_COMM_WORLD, &mpi_size);
         // Default to Linear (Naive) Partitioning
@@ -381,7 +381,7 @@ public:
         partitioner = std::move(p);
     }
 
-    ~CudaMpiSnpSimulator() {
+    ~OptimizedCudaMpiSnpSimulator() {
         d_neurons.free();
         d_rules.free();
         d_local_synapses.free();
@@ -938,9 +938,9 @@ void prepareRules(const SnpSystemConfig& config) {
     }
 };
 
-std::unique_ptr<ISnpSimulator> createCudaMpiSimulator(PartitionerType partitionerType)
+std::unique_ptr<ISnpSimulator> createOptimizedCudaMpiSimulator(PartitionerType partitionerType)
 {
-    auto sim = std::make_unique<CudaMpiSnpSimulator>();
+    auto sim = std::make_unique<OptimizedCudaMpiSnpSimulator>();
     std::unique_ptr<IPartitioner> partitioner;
     switch (partitionerType)
     {

@@ -12,8 +12,8 @@ The project has three sort implementations, all using the `ISort` interface:
    - Single-threaded CPU implementation
    - Baseline for comparison
 
-2. **CUDA/MPI Optimized SNP Sort** (`createCudaMpiSnpSort()`)
-   - Uses `CudaMpiSnpSimulator`
+2. **CUDA/MPI Optimized SNP Sort** (`createOptimizedCudaMpiSnpSort()`)
+   - Uses `OptimizedCudaMpiSnpSimulator`
    - GPU-accelerated with MPI distribution
    - Expected best performance
 

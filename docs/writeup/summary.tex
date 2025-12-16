@@ -41,7 +41,7 @@ The codebase follows a modular architecture designed for extensibility and maint
 
 \section*{Codebase Structure}
 \begin{itemize}
-    \item \texttt{src/snp}: Contains the core SNP simulation logic, including the simulator interfaces and concrete implementations (e.g., \texttt{CudaMpiSnpSimulator}, \texttt{SparseCudaSnpSimulator}), as well as graph partitioners (Linear, Louvain).
+    \item \texttt{src/snp}: Contains the core SNP simulation logic, including the simulator interfaces and concrete implementations (e.g., \texttt{OptimizedCudaMpiSnpSimulator}, \texttt{SparseCudaSnpSimulator}), as well as graph partitioners (Linear, Louvain).
     \item \texttt{src/linear\_algebra}: Houses the matrix operation engines. Implementations include \texttt{CpuMatrixOps}, \texttt{CudaMatrixOps}, and \texttt{MpiCudaMatrixOps}.
     \item \texttt{src/sort}: Demonstrates the library's capabilities through an application of SNP systems for sorting algorithms (Bitonic sort).
 \end{itemize}

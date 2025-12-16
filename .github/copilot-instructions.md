@@ -11,7 +11,7 @@ This is a high-performance C++ library for simulating Spiking Neural P (SNP) Sys
 - **Backends**:
   - **CPU**: OpenMP-accelerated (`CpuMatrixOps.cpp`, `NaiveCpuSnpSimulator.cpp`).
   - **CUDA**: Single-GPU acceleration (`CudaMatrixOps.cu`, `CudaSnpSimulator.cu`).
-  - **MPI+CUDA**: Distributed multi-GPU computing (`MpiCudaMatrixOps.cu`, `CudaMpiSnpSimulator.cu`).
+  - **MPI+CUDA**: Distributed multi-GPU computing (`MpiCudaMatrixOps.cu`, `OptimizedCudaMpiSnpSimulator.cu`).
   - **Sparse**: Optimized CUDA implementation for sparse matrices (`SparseCudaSnpSimulator.cu`).
 
 ## Build & Test Workflow
@@ -31,7 +31,7 @@ This is a high-performance C++ library for simulating Spiking Neural P (SNP) Sys
   - Kernel launches and device memory management should be encapsulated within `.cu` files.
   - Use `checkCudaErrors` or similar error handling macros (if available) for CUDA calls.
 - **MPI**:
-  - MPI calls should be isolated in MPI-specific implementations (`MpiCudaMatrixOps.cu`, `CudaMpiSnpSimulator.cu`).
+  - MPI calls should be isolated in MPI-specific implementations (`MpiCudaMatrixOps.cu`, `OptimizedCudaMpiSnpSimulator.cu`).
   - Ensure proper synchronization (barriers) when necessary.
 - **Interfaces**:
   - Always program to interfaces (`ISnpSimulator`, `IMatrixOps`) to ensure backend interchangeability.

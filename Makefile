@@ -70,7 +70,7 @@ build: $(BUILD_DIR)/CMakeCache.txt ## Build the project (incremental)
 
 clean: ## Clean build artifacts
 	@echo "$(YELLOW)Cleaning build directory...$(NC)"
-	@cmake --build $(BUILD_DIR) --target clean 2>/dev/null || rm -rf $(BUILD_DIR)
+	@rm -rf $(BUILD_DIR)
 
 compile-commands: $(BUILD_DIR)/CMakeCache.txt ## Link compile_commands.json for LSP support
 	@ln -sf $(BUILD_DIR)/compile_commands.json .

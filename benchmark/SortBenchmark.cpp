@@ -1,8 +1,8 @@
 #include "../src/sort/ISort.hpp"
-#include "../src/snp/ISnpSimulator.hpp"
-#include "../src/snp/SnpSystemConfig.hpp"
-#include "../src/snp/IPartitioner.hpp"
-#include "../src/snp/PerformanceMetrics.hpp"
+#include "ISnpSimulator.hpp"
+#include "SnpSystemConfig.hpp"
+#include "IPartitioner.hpp"
+#include "PerformanceMetrics.hpp"
 #include <benchmark/benchmark.h>
 #include <mpi.h>
 #include <algorithm>
@@ -302,13 +302,13 @@ int main(int argc, char** argv) {
     // 1. CPU
     RegisterSimulator("CpuSnp", createNaiveCpuSnpSort, Suites::Small);
 
-    // 2. CUDA
-    RegisterSimulator("CudaSnp", createCudaSnpSort, Suites::Small);
-    RegisterSimulator("CudaSnp", createCudaSnpSort, Suites::Medium);
-
-    // 3. Sparse CUDA
+    // 2. Sparse CUDA
     RegisterSimulator("SparseCudaSnp", createSparseCudaSnpSort, Suites::Small);
     RegisterSimulator("SparseCudaSnp", createSparseCudaSnpSort, Suites::Medium);
+
+    // 3. CUDA
+    RegisterSimulator("OptimizedCudaSnp", createOptimizedCudaSnpSort, Suites::Small);
+    RegisterSimulator("OptimizedCudaSnp", createOptimizedCudaSnpSort, Suites::Medium);
 
     // 4. Naive CUDA/MPI
     RegisterSimulator("NaiveCudaMpiSnp", []()
@@ -317,22 +317,22 @@ int main(int argc, char** argv) {
                       { return createNaiveCudaMpiSnpSort(); }, Suites::Medium);
 
     // 5. CUDA/MPI (Linear - Default)
-    RegisterSimulator("CudaMpiSnp_Linear", []()
-                      { return createCudaMpiSnpSort(PartitionerType::LINEAR); }, Suites::Small);
-    RegisterSimulator("CudaMpiSnp_Linear", []()
-                      { return createCudaMpiSnpSort(PartitionerType::LINEAR); }, Suites::Medium);
+    RegisterSimulator("OptimizedCudaMpiSnp_Linear", []()
+                      { return createOptimizedCudaMpiSnpSort(PartitionerType::LINEAR); }, Suites::Small);
+    RegisterSimulator("OptimizedCudaMpiSnp_Linear", []()
+                      { return createOptimizedCudaMpiSnpSort(PartitionerType::LINEAR); }, Suites::Medium);
 
     // 5b. CUDA/MPI (Louvain)
-    RegisterSimulator("CudaMpiSnp_Louvain", []()
-                      { return createCudaMpiSnpSort(PartitionerType::LOUVAIN); }, Suites::Small);
-    RegisterSimulator("CudaMpiSnp_Louvain", []()
-                      { return createCudaMpiSnpSort(PartitionerType::LOUVAIN); }, Suites::Medium);
+    RegisterSimulator("OptimizedCudaMpiSnp_Louvain", []()
+                      { return createOptimizedCudaMpiSnpSort(PartitionerType::LOUVAIN); }, Suites::Small);
+    RegisterSimulator("OptimizedCudaMpiSnp_Louvain", []()
+                      { return createOptimizedCudaMpiSnpSort(PartitionerType::LOUVAIN); }, Suites::Medium);
 
     // 5c. CUDA/MPI (Red-Blue)
-    RegisterSimulator("CudaMpiSnp_RedBlue", []()
-                      { return createCudaMpiSnpSort(PartitionerType::RED_BLUE_BFS); }, Suites::Small);
-    RegisterSimulator("CudaMpiSnp_RedBlue", []()
-                      { return createCudaMpiSnpSort(PartitionerType::RED_BLUE_BFS); }, Suites::Medium);
+    RegisterSimulator("OptimizedCudaMpiSnp_RedBlue", []()
+                      { return createOptimizedCudaMpiSnpSort(PartitionerType::RED_BLUE_BFS); }, Suites::Small);
+    RegisterSimulator("OptimizedCudaMpiSnp_RedBlue", []()
+                      { return createOptimizedCudaMpiSnpSort(PartitionerType::RED_BLUE_BFS); }, Suites::Medium);
 
     // --- EXECUTION PHASE ---
     if (rank == 0) {

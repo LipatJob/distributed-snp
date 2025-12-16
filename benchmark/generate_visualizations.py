@@ -22,23 +22,23 @@ plt.rcParams['savefig.bbox'] = 'tight'
 # Color palette for consistent, distinguishable colors
 COLORS = {
     'CpuSnp': '#2E86AB',           # Blue
-    'CudaSnp': '#A23B72',          # Purple
     'SparseCudaSnp': '#F18F01',    # Orange
+    'OptimizedCudaSnp': '#A23B72',          # Purple
     'NaiveCudaMpiSnp': '#C73E1D',  # Red
-    'CudaMpiSnp_Linear': '#6A994E', # Green
-    'CudaMpiSnp_Louvain': '#BC4B51', # Dark red
-    'CudaMpiSnp_RedBlue': '#8B5A3C'  # Brown
+    'OptimizedCudaMpiSnp_Linear': '#6A994E', # Green
+    'OptimizedCudaMpiSnp_Louvain': '#BC4B51', # Dark red
+    'OptimizedCudaMpiSnp_RedBlue': '#8B5A3C'  # Brown
 }
 
 # Implementation labels for clean display
 LABELS = {
     'CpuSnp': 'CPU',
-    'CudaSnp': 'CUDA',
     'SparseCudaSnp': 'Sparse CUDA',
+    'OptimizedCudaSnp': 'Optimized CUDA',
     'NaiveCudaMpiSnp': 'Naive CUDA+MPI',
-    'CudaMpiSnp_Linear': 'CUDA+MPI (Linear)',
-    'CudaMpiSnp_Louvain': 'CUDA+MPI (Louvain)',
-    'CudaMpiSnp_RedBlue': 'CUDA+MPI (RedBlue)'
+    'OptimizedCudaMpiSnp_Linear': 'Optimized CUDA+MPI (Linear)',
+    'OptimizedCudaMpiSnp_Louvain': 'Optimized CUDA+MPI (Louvain)',
+    'OptimizedCudaMpiSnp_RedBlue': 'Optimized CUDA+MPI (RedBlue)'
 }
 
 

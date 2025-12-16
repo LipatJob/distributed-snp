@@ -22,12 +22,12 @@ import generate_visualizations as viz
 # Implementation metadata for report generation
 IMPLEMENTATIONS = {
     'CpuSnp': {'label': 'CPU', 'has_mpi': False},
-    'CudaSnp': {'label': 'CUDA', 'has_mpi': False},
     'SparseCudaSnp': {'label': 'Sparse CUDA', 'has_mpi': False},
+    'OptimizedCudaSnp': {'label': 'CUDA', 'has_mpi': False},
     'NaiveCudaMpiSnp': {'label': 'Naive CUDA+MPI', 'has_mpi': True},
-    'CudaMpiSnp_Linear': {'label': 'CUDA+MPI (Linear)', 'has_mpi': True},
-    'CudaMpiSnp_Louvain': {'label': 'CUDA+MPI (Louvain)', 'has_mpi': True},
-    'CudaMpiSnp_RedBlue': {'label': 'CUDA+MPI (RedBlue)', 'has_mpi': True},
+    'OptimizedCudaMpiSnp_Linear': {'label': 'CUDA+MPI (Linear)', 'has_mpi': True},
+    'OptimizedCudaMpiSnp_Louvain': {'label': 'CUDA+MPI (Louvain)', 'has_mpi': True},
+    'OptimizedCudaMpiSnp_RedBlue': {'label': 'CUDA+MPI (RedBlue)', 'has_mpi': True},
 }
 
 def load_benchmark_data(json_path):

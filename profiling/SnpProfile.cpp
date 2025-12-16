@@ -205,23 +205,23 @@ int main(int argc, char** argv) {
         });
     }
     
-    // CUDA Implementation
-    if (targetImpl.empty() || targetImpl == "cuda" || targetImpl == "all") {
+    // Sparse CUDA Implementation
+    if (targetImpl.empty() || targetImpl == "sparse-cuda" || targetImpl == "all") {
         profileConfigs.push_back({
-            "CudaSnp",
-            createCudaSimulator,
+            "SparseCudaSnp",
+            createSparseCudaSimulator,
             MEDIUM_SIZE,
             MEDIUM_MAX,
             false,  // Single process
             numSteps
         });
     }
-    
-    // Sparse CUDA Implementation
-    if (targetImpl.empty() || targetImpl == "sparse-cuda" || targetImpl == "all") {
+
+        // Optimized CUDA Implementation
+    if (targetImpl.empty() || targetImpl == "optimized-cuda" || targetImpl == "all") {
         profileConfigs.push_back({
-            "SparseCudaSnp",
-            createSparseCudaSimulator,
+            "OptimizedCudaSnp",
+            createOptimizedCudaSimulator,
             MEDIUM_SIZE,
             MEDIUM_MAX,
             false,  // Single process
@@ -241,11 +241,11 @@ int main(int argc, char** argv) {
         });
     }
     
-    // CUDA+MPI Implementation
-    if (targetImpl.empty() || targetImpl == "cuda-mpi" || targetImpl == "mpi" || targetImpl == "all") {
+    // Optimized CUDA+MPI Implementation
+    if (targetImpl.empty() || targetImpl == "optimized-cuda-mpi" || targetImpl == "mpi" || targetImpl == "all") {
         profileConfigs.push_back({
-            "CudaMpiSnp",
-            [partitionerType]() { return createCudaMpiSimulator(partitionerType); },
+            "OptimizedCudaMpiSnp",
+            [partitionerType]() { return createOptimizedCudaMpiSimulator(partitionerType); },
             MEDIUM_SIZE,
             MEDIUM_MAX,
             true,  // Requires MPI
@@ -272,10 +272,10 @@ int main(int argc, char** argv) {
             std::cout << "\nUsage: " << argv[0] << " [implementation] [steps] [partitioner] [array_size]\n";
             std::cout << "\nAvailable implementations:\n";
             std::cout << "  cpu           - Profile CPU implementation only\n";
-            std::cout << "  cuda          - Profile CUDA implementation only\n";
+            std::cout << "  optimized-cuda          - Profile CUDA implementation only\n";
             std::cout << "  sparse-cuda   - Profile Sparse CUDA implementation only\n";
             std::cout << "  naive-cuda-mpi- Profile Naive CUDA+MPI implementation only\n";
-            std::cout << "  cuda-mpi      - Profile CUDA+MPI implementation only\n";
+            std::cout << "  optimized-cuda-mpi      - Profile CUDA+MPI implementation only\n";
             std::cout << "  mpi           - Profile all MPI implementations\n";
             std::cout << "  all           - Profile all implementations\n";
             std::cout << "  (no arg)      - Profile all implementations\n";

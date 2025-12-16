@@ -1,7 +1,7 @@
 #include "ISort.hpp"
 #include "../snp/ISnpSimulator.hpp"
 #include "../snp/SnpSystemConfig.hpp"
-#include "../snp/IPartitioner.hpp"
+#include "../partitioner/IPartitioner.hpp"
 #include <iostream>
 
 class SnpSort : public ISort {
@@ -188,14 +188,14 @@ std::unique_ptr<ISort> createNaiveCpuSnpSort() {
     return std::make_unique<SnpSort>(createNaiveCpuSimulator());
 }
 
-// Factory function to create SnpSort with CUDA simulator
-std::unique_ptr<ISort> createCudaSnpSort() {
-    return std::make_unique<SnpSort>(createCudaSimulator());
-}
-
 // Factory function to create SnpSort with Sparse CUDA simulator
 std::unique_ptr<ISort> createSparseCudaSnpSort() {
     return std::make_unique<SnpSort>(createSparseCudaSimulator());
+}
+
+// Factory function to create SnpSort with CUDA simulator
+std::unique_ptr<ISort> createOptimizedCudaSnpSort() {
+    return std::make_unique<SnpSort>(createOptimizedCudaSimulator());
 }
 
 // Factory function to create SnpSort with Naive CUDA/MPI simulator
@@ -205,7 +205,7 @@ std::unique_ptr<ISort> createNaiveCudaMpiSnpSort(PartitionerType pType)
 }
 
 // Factory function to create SnpSort with CUDA/MPI simulator
-std::unique_ptr<ISort> createCudaMpiSnpSort(PartitionerType pType)
+std::unique_ptr<ISort> createOptimizedCudaMpiSnpSort(PartitionerType pType)
 {
-    return std::make_unique<SnpSort>(createCudaMpiSimulator(pType));
+    return std::make_unique<SnpSort>(createOptimizedCudaMpiSimulator(pType));
 }

@@ -1,6 +1,6 @@
-# CudaMpiSnpSimulator: Scalable Distributed Architecture
+# OptimizedCudaMpiSnpSimulator: Scalable Distributed Architecture
 
-This document explains the architecture of the optimized `CudaMpiSnpSimulator`. Unlike the "Naive" implementation which replicates all synapses, this version uses a **Graph Partitioning** approach with explicit **Edge-Cut Communication**. This design reduces memory usage and communication volume, making it suitable for large-scale systems where the synapse graph cannot fit on a single GPU.
+This document explains the architecture of the optimized `OptimizedCudaMpiSnpSimulator`. Unlike the "Naive" implementation which replicates all synapses, this version uses a **Graph Partitioning** approach with explicit **Edge-Cut Communication**. This design reduces memory usage and communication volume, making it suitable for large-scale systems where the synapse graph cannot fit on a single GPU.
 
 ## 1. Architectural Overview
 
@@ -85,7 +85,7 @@ Classification Result:
 
 To maximize GPU memory bandwidth, data is organized into specialized Structure of Arrays (SoA) layouts.
 
-### DeviceNeuronData (State)
+### OptimizedCudaSnpSimulator (State)
 Stores the dynamic state of local neurons.
 * `configuration`: Current spike counts ($C_k$).
 * `delay_timer` & `pending_emission`: Logic for handling rule delays.

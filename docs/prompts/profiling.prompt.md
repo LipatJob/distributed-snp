@@ -4,7 +4,7 @@ Make sure to read the following files for context on how to do this:
 - benchmark/SortBenchmark.cpp
 - scripts/run_distributed_benchmark.sh
 - src/snp/NaiveCudaMpiSnpSimulator.cu
-- src/snp/CudaMpiSnpSimulator.cu
+- src/snp/OptimizedCudaMpiSnpSimulator.cu
 - src/snp/SparseCudaSnpSimulator.cu
 - src/snp/NaiveCpuSnpSimulator.cpp
 - src/sort/SnpSort.cpp

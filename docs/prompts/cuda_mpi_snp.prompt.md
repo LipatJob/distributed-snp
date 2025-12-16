@@ -2,7 +2,7 @@
 Act as a Senior High-Performance Computing (HPC) Engineer specializing in Hybrid MPI+CUDA architectures.
 
 # Task
-Implement the `CudaMpiSnpSimulator` class in C++. This class must facilitate a distributed simulation of Spiking Neural P (SNP) Systems across multiple nodes, each equipped with an NVIDIA T4 GPU.
+Implement the `OptimizedCudaMpiSnpSimulator` class in C++. This class must facilitate a distributed simulation of Spiking Neural P (SNP) Systems across multiple nodes, each equipped with an NVIDIA T4 GPU.
 
 # Context & Constraints
 1.  **Architecture:** The implementation must use a hybrid model: MPI for inter-node communication and CUDA for intra-node parallel processing.

@@ -52,11 +52,14 @@ add_library(snp_system STATIC
     src/snp/SnpSystemConfig.hpp
     src/snp/ISnpSimulator.hpp
     src/snp/NaiveCpuSnpSimulator.cpp
-    src/snp/CudaSnpSimulator.cu
+    src/snp/OptimizedCudaSnpSimulator.cu
     src/snp/SparseCudaSnpSimulator.cu
     src/snp/NaiveCudaMpiSnpSimulator.cu
-    src/snp/CudaMpiSnpSimulator.cu
-    src/snp/LouvainPartitioner.cpp
+    src/snp/OptimizedCudaMpiSnpSimulator.cu
+    src/partitioner/IPartitioner.hpp
+    src/partitioner/LinearPartitioner.hpp
+    src/partitioner/LouvainPartitioner.cpp
+    src/partitioner/RedBluePartitioner.hpp
 )
 
 set_target_properties(snp_system PROPERTIES
@@ -66,6 +69,7 @@ set_target_properties(snp_system PROPERTIES
 )
 
 target_include_directories(snp_system PUBLIC ${PROJECT_SOURCE_DIR}/src/snp)
+target_include_directories(snp_system PUBLIC ${PROJECT_SOURCE_DIR}/src/partitioner)
 target_link_libraries(snp_system PUBLIC MPI::MPI_CXX CUDA::cudart)
 
 # ============================================================================
@@ -121,17 +125,17 @@ if(BUILD_TESTS)
     # --- Define Tests ---
     
     # SNP Simulator
-    add_executable(test_snp_simulator tests/snp/SnpSimulator.cpp)
+    add_executable(test_snp_simulator tests/snp/SnpSimulatorTest.cpp)
     target_link_libraries(test_snp_simulator PRIVATE snp_system GTest::gtest GTest::gtest_main MPI::MPI_CXX)
     add_mpi_test(SnpSimulatorTest test_snp_simulator)
 
     # SNP Sort
-    add_executable(test_sort tests/sort/SnpSort.cpp)
+    add_executable(test_sort tests/sort/SnpSortTest.cpp)
     target_link_libraries(test_sort PRIVATE snp_sort snp_system GTest::gtest GTest::gtest_main MPI::MPI_CXX)
     add_mpi_test(SnpSortTest test_sort)
 
     # Partitioner
-    add_executable(test_partitioner tests/snp/PartitionerTest.cpp)
+    add_executable(test_partitioner tests/partitioner/PartitionerTest.cpp)
     target_link_libraries(test_partitioner PRIVATE snp_system GTest::gtest GTest::gtest_main MPI::MPI_CXX)
     add_mpi_test(PartitionerTest test_partitioner)
     
@@ -140,7 +144,7 @@ if(BUILD_TESTS)
     target_link_libraries(sort_benchmark PRIVATE snp_sort snp_system benchmark::benchmark benchmark::benchmark_main MPI::MPI_CXX)
 
     # --- Microbenchmark Tool ---
-    add_executable(microbenchmark src/microbenchmark.cpp)
+    add_executable(microbenchmark benchmark/Microbenchmark.cpp)
     target_link_libraries(microbenchmark PRIVATE snp_sort snp_system MPI::MPI_CXX)
 endif()
 

@@ -39,7 +39,7 @@ Implements the core SN P system simulation with multiple backends:
 - **CudaSnpSimulator**: Single-GPU optimized implementation
 - **SparseCudaSnpSimulator**: Optimized for sparse system matrices
 - **NaiveCudaMpiSnpSimulator**: Basic distributed implementation
-- **CudaMpiSnpSimulator**: Optimized distributed multi-GPU implementation
+- **OptimizedCudaMpiSnpSimulator**: Optimized distributed multi-GPU implementation
 
 All simulators implement the [ISnpSimulator](src/snp/ISnpSimulator.hpp) interface, providing:
 - `loadSystem()`: Initialize the SN P system configuration

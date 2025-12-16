@@ -1,11 +1,11 @@
 #include "ISnpSimulator.hpp"
 #include "SnpSystemConfig.hpp"
+#include "SnpSystemPermuter.hpp"
 #include "PerformanceMetrics.hpp"
 #include "IPartitioner.hpp"
 #include "LinearPartitioner.hpp"
 #include "LouvainPartitioner.hpp"
 #include "RedBluePartitioner.hpp"
-#include "SnpSystemPermuter.hpp"
 #include <mpi.h>
 #include <cuda_runtime.h>
 #include <vector>
