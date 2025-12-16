@@ -45,7 +45,9 @@ NC     := \033[0m
         generate-hostfile distribute check-nodes \
         test benchmark benchmark-viz profile
 
-all: build
+all: distribute
+	@echo "$(GREEN)Profiling...$(NC)"
+	@./scripts/run_all.sh $(ARGS)
 
 # Dynamic Help Generation
 help: ## Show this help message
@@ -110,10 +112,6 @@ benchmark: distribute ## Run benchmarks
 	@echo "$(GREEN)Running benchmarks...$(NC)"
 	@./scripts/run_benchmark.sh $(ARGS)
 
-benchmark-viz: build ## Run benchmarks and visualize
-	@echo "$(GREEN)Running benchmarks + visualization...$(NC)"
-	@./scripts/benchmark_and_visualize.sh
-
 profile: distribute ## Profile implementations
 	@echo "$(GREEN)Profiling...$(NC)"
 	@./scripts/run_profiling.sh $(ARGS)
@@ -124,3 +122,4 @@ run-distributed:
 microbenchmark: distribute ## Run microbenchmark tool (use: make microbenchmark -- -n 1000 -i cuda)
 	@echo "$(GREEN)Running microbenchmark...$(NC)"
 	$(MAKE) run-distributed ARGS="$(REMOTE_DIR)/bin/microbenchmark $(ARGS)"
+
