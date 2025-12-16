@@ -19,7 +19,7 @@ endif()
 
 # Configuration Variables (Easily editable)
 set(CUDA_ARCH_TARGET "75" CACHE STRING "Target CUDA architecture")
-set(MPI_TEST_HOSTS "localhost,10.0.0.2" CACHE STRING "Hosts for MPI tests")
+set(MPI_TEST_HOSTS "localhost,10.0.0.2,10.0.1.2" CACHE STRING "Hosts for MPI tests")
 option(BUILD_TESTS "Build tests and benchmarks" ON)
 
 # --- KEY REQUEST: Centralized Build Artifacts ---
@@ -116,7 +116,7 @@ if(BUILD_TESTS)
     macro(add_mpi_test test_name target_name)
         add_test(NAME ${test_name}
                  COMMAND ${MPIEXEC_EXECUTABLE} 
-                 ${MPIEXEC_NUMPROC_FLAG} 2 
+                 ${MPIEXEC_NUMPROC_FLAG} 3 
                  --host ${MPI_TEST_HOSTS}
                  ${MPIEXEC_PREFLAGS} $<TARGET_FILE:${target_name}> ${MPIEXEC_POSTFLAGS} 
                  --allow-run-as-root)
@@ -140,12 +140,9 @@ if(BUILD_TESTS)
     add_mpi_test(PartitionerTest test_partitioner)
     
     # --- Benchmarks ---
-    add_executable(sort_benchmark benchmark/SortBenchmark.cpp)
+    add_executable(sort_benchmark benchmark/SortDriver.cpp)
     target_link_libraries(sort_benchmark PRIVATE snp_sort snp_system benchmark::benchmark benchmark::benchmark_main MPI::MPI_CXX)
 
-    # --- Microbenchmark Tool ---
-    add_executable(microbenchmark benchmark/Microbenchmark.cpp)
-    target_link_libraries(microbenchmark PRIVATE snp_sort snp_system MPI::MPI_CXX)
 endif()
 
 # ============================================================================

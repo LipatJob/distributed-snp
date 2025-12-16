@@ -8,8 +8,8 @@ NC='\033[0m'
 
 # Configuration
 BUILD_DIR="/home/shared/tmp/distributed-snp-new"
-HOSTS="localhost,10.0.0.2"
-NUM_PROCS=2
+HOSTS="localhost,10.0.0.2,10.0.1.2"
+NUM_PROCS=3
 
 echo -e "${BLUE}══════════════════════════════════════════════════════${NC}"
 echo -e "${BLUE}  SNP Distributed Tests${NC}"

@@ -1,2 +1,5 @@
 results/
 __pycache__/
+output/
+perflogs/
+stage/

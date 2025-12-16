@@ -11,6 +11,8 @@ import seaborn as sns
 import pandas as pd
 import numpy as np
 from pathlib import Path
+import json
+import re
 
 # Set style for clean, professional plots
 sns.set_style("whitegrid")
@@ -437,3 +439,99 @@ def generate_all_visualizations(df, viz_dir):
     speedup_analysis(df, viz_dir)
     
     print(f"\n✓ All visualizations saved to: {viz_dir}")
+
+
+def parse_reframe_report(report_path):
+    """
+    Parse ReFrame report.json and associated output files to extract metrics.
+    """
+    with open(report_path, 'r') as f:
+        report = json.load(f)
+    
+    data = []
+    
+    for run in report['runs']:
+        for testcase in run['testcases']:
+            # Extract parameters
+            sim_type = testcase['sim_type']
+            size = testcase['input_size']
+            partitioner = testcase['partitioner']
+            output_dir = Path(testcase['outputdir'])
+            
+            # Map to Implementation name
+            if sim_type == 'cpu':
+                impl = 'CpuSnp'
+            elif sim_type == 'sparse-cuda':
+                impl = 'SparseCudaSnp'
+            elif sim_type == 'optimized-cuda':
+                impl = 'OptimizedCudaSnp'
+            elif sim_type == 'naive-cuda-mpi':
+                impl = 'NaiveCudaMpiSnp'
+            elif sim_type == 'optimized-cuda-mpi':
+                if partitioner == 'linear':
+                    impl = 'OptimizedCudaMpiSnp_Linear'
+                elif partitioner == 'louvain':
+                    impl = 'OptimizedCudaMpiSnp_Louvain'
+                elif partitioner == 'redblue':
+                    impl = 'OptimizedCudaMpiSnp_RedBlue'
+                else:
+                    impl = f'OptimizedCudaMpiSnp_{partitioner.capitalize()}'
+            else:
+                impl = sim_type
+            
+            # Parse output file for metrics
+            log_file = output_dir / 'rfm_job.out'
+            metrics = {}
+            if log_file.exists():
+                try:
+                    with open(log_file, 'r') as f:
+                        content = f.read()
+                        
+                        # Extract metrics using regex
+                        loop_time = re.search(r'\[BenchMetric\] LoopTime: (\S+)', content)
+                        throughput = re.search(r'\[BenchMetric\] Throughput: (\S+)', content)
+                        compute_time = re.search(r'\[BenchMetric\] ComputeTime: (\S+)', content)
+                        comm_time = re.search(r'\[BenchMetric\] MPI_CommTime: (\S+)', content)
+                        
+                        if loop_time: metrics['LoopTime'] = float(loop_time.group(1))
+                        if throughput: metrics['Throughput_steps/s'] = float(throughput.group(1))
+                        if compute_time: metrics['comp_time'] = float(compute_time.group(1))
+                        if comm_time: metrics['comm_time'] = float(comm_time.group(1))
+                        else: metrics['comm_time'] = 0.0
+                except Exception as e:
+                    print(f"Warning: Failed to read {log_file}: {e}")
+            
+            if 'Throughput_steps/s' in metrics:
+                entry = {
+                    'Size': int(size),
+                    'Pattern': 'ReverseSorted',
+                    'Implementation': impl,
+                    'Throughput_steps/s': metrics['Throughput_steps/s'] * 1000, # Convert steps/ms to steps/s
+                    'comp_time': metrics.get('comp_time', 0),
+                    'comm_time': metrics.get('comm_time', 0)
+                }
+                data.append(entry)
+    
+    return pd.DataFrame(data)
+
+
+if __name__ == "__main__":
+    import argparse
+    
+    parser = argparse.ArgumentParser(description='Generate SNP benchmark visualizations')
+    parser.add_argument('--report', type=str, default='report.json', help='Path to ReFrame report.json')
+    parser.add_argument('--output', type=str, default='visualizations', help='Output directory for plots')
+    
+    args = parser.parse_args()
+    
+    if not Path(args.report).exists():
+        print(f"Error: Report file {args.report} not found.")
+        exit(1)
+        
+    df = parse_reframe_report(args.report)
+    
+    if df.empty:
+        print("No data found in report.")
+    else:
+        print(f"Loaded {len(df)} benchmark results.")
+        generate_all_visualizations(df, args.output)

@@ -148,11 +148,11 @@ run_mpi_profiler() {
     
     # Execute with or without MPI
     if [ "$is_mpi" = true ]; then
-        for node in "localhost" "10.0.0.2"; do
+        for node in "localhost" "10.0.0.2" "10.0.1.2"; do
             ssh shared@"$node" "mkdir -p $output_dir"  2>&1 || true
         done
         # Suppress MPI error messages when process exits during cleanup
-        local mpi_cmd="mpirun -np 2 --host localhost,10.0.0.2 \
+        local mpi_cmd="mpirun -np 3 --host localhost,10.0.0.2,10.0.1.2 \
             --mca btl_tcp_if_include ens5 --mca oob_tcp_if_include ens5 \
             --mca orte_abort_on_non_zero_status 0"
         eval "$mpi_cmd $profiler_cmd $app_cmd" 2>&1 | grep -v "^Collecting\|^==\|Primary job\|mpirun detected" || true
