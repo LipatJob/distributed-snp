@@ -704,6 +704,10 @@ public:
                 for (int r = 0; r < mpi_size; ++r) {
                     if (r == mpi_rank) continue;
                     if (comm_map[r].export_count > 0) {
+                        if (comm_map[r].h_send_buf == nullptr) {
+                            printf("Rank %d: Error h_send_buf is null for rank %d (count %d)\n", mpi_rank, r, comm_map[r].export_count);
+                            continue;
+                        }
                         CUDA_CHECK(cudaMemcpyAsync(
                             comm_map[r].h_send_buf,
                             d_export_buffer + comm_map[r].export_offset,

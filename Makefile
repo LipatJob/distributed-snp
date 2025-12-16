@@ -151,18 +151,18 @@ endif
 
 bigdata-generate: build ## Generate Big Data dataset
 	@echo "$(BLUE)Generating Big Data dataset...$(NC)"
-	$(MAKE) run-distributed ARGS="mkdir -p $(OUTDIR)"
-	$(MAKE) run-distributed ARGS="$(REMOTE_DIR)/bin/bigdata_generator \
+	@mkdir -p $(OUTDIR)
+	@$(BUILD_DIR)/bin/bigdata_generator \
 		--neurons $(NEURONS) \
 		--ranks $(NUM_RANKS) \
 		--intra $(PINTRA) \
 		--inter $(PINTER) \
 		--outdir $(OUTDIR) \
 		--seed $(SEED) \
-		--mem-limit $(MEM_LIMIT_GB)"
+		--mem-limit $(MEM_LIMIT_GB)
 
 bigdata-run: ## Run Big Data simulation
 	@$(MAKE) distribute NODES="$(DIST_NODES)"
 	@echo "$(BLUE)Running Big Data simulation on $(NUM_RANKS) ranks ($(MPI_HOSTS))...$(NC)"
-	$(MAKE) run-distributed ARGS="$(REMOTE_DIR)/bin/bigdata_run $(OUTDIR)/descriptor.json $(STEPS)"
+	@./scripts/run_bigdata.sh "$(DIST_NODES)" "$(OUTDIR)" "$(STEPS)" "$(REMOTE_DIR)" "$(BUILD_DIR)" "$(NEURONS)"
 	@echo "$(GREEN)✓$(NC) Run complete. Results in $(OUTDIR)/results.json"

@@ -21,6 +21,7 @@ struct Config {
     std::string out_dir = "output/bigdata";
     uint64_t seed = 123;
     double mem_limit_gb = 0.0; // 0 means no check
+    int target_rank = -1; // -1 means generate all
 };
 
 void print_usage(const char* prog) {
@@ -33,6 +34,7 @@ void print_usage(const char* prog) {
               << "  -o, --outdir DIR      Output directory (default: output/bigdata)\n"
               << "  -s, --seed S          Random seed (default: 123)\n"
               << "  --mem-limit GB        Memory limit check in GB (default: 0/off)\n"
+              << "  --rank R              Only generate partition for rank R (default: all)\n"
               << "  -h, --help            Show this help\n";
 }
 
@@ -47,6 +49,7 @@ Config parse_args(int argc, char** argv) {
         else if (arg == "-o" || arg == "--outdir") c.out_dir = argv[++i];
         else if (arg == "-s" || arg == "--seed") c.seed = std::stoull(argv[++i]);
         else if (arg == "--mem-limit") c.mem_limit_gb = std::stod(argv[++i]);
+        else if (arg == "--rank") c.target_rank = std::stoi(argv[++i]);
         else if (arg == "-h" || arg == "--help") { print_usage(argv[0]); exit(0); }
     }
     return c;
@@ -89,7 +92,7 @@ int main(int argc, char** argv) {
 
     // 2. Setup
     fs::create_directories(config.out_dir);
-    fs::path temp_dir = fs::path(config.out_dir) / "temp";
+    fs::path temp_dir = fs::path(config.out_dir) / ("temp_" + std::to_string(config.target_rank));
     fs::create_directories(temp_dir);
 
     std::mt19937_64 rng(config.seed);
@@ -144,8 +147,15 @@ int main(int argc, char** argv) {
         std::cout << "  Processing Rank " << src_rank << " (" << count << " neurons)..." << std::endl;
 
         // Open temp files
-        std::ofstream f_neurons(temp_dir / ("neurons_" + std::to_string(src_rank)), std::ios::binary);
-        std::ofstream f_local_syn(temp_dir / ("local_syn_" + std::to_string(src_rank)), std::ios::binary);
+        std::ofstream f_neurons;
+        if (config.target_rank == -1 || config.target_rank == src_rank) {
+            f_neurons.open(temp_dir / ("neurons_" + std::to_string(src_rank)), std::ios::binary);
+        }
+        
+        std::ofstream f_local_syn;
+        if (config.target_rank == -1 || config.target_rank == src_rank) {
+            f_local_syn.open(temp_dir / ("local_syn_" + std::to_string(src_rank)), std::ios::binary);
+        }
         
         // Map dst_rank -> ofstream
         std::map<int, std::ofstream> f_exports;
@@ -157,12 +167,16 @@ int main(int argc, char** argv) {
             if (src_rank == dst_rank) continue;
             
             // Export file: src_rank sends to dst_rank
-            f_exports[dst_rank].open(temp_dir / ("export_" + std::to_string(src_rank) + "_" + std::to_string(dst_rank)), std::ios::binary);
+            // Only needed if src_rank is target
+            if (config.target_rank == -1 || config.target_rank == src_rank) {
+                f_exports[dst_rank].open(temp_dir / ("export_" + std::to_string(src_rank) + "_" + std::to_string(dst_rank)), std::ios::binary);
+            }
             
             // Import file: dst_rank receives from src_rank
-            // We append to it? No, multiple src_ranks write to same dst_rank's import file?
-            // No, we create unique file per pair: import_dst_src
-            f_imports[dst_rank].open(temp_dir / ("import_" + std::to_string(dst_rank) + "_" + std::to_string(src_rank)), std::ios::binary);
+            // Only needed if dst_rank is target
+            if (config.target_rank == -1 || config.target_rank == dst_rank) {
+                f_imports[dst_rank].open(temp_dir / ("import_" + std::to_string(dst_rank) + "_" + std::to_string(src_rank)), std::ios::binary);
+            }
             
             export_counters[dst_rank] = 0;
         }
@@ -181,13 +195,17 @@ int main(int argc, char** argv) {
             int32_t id = (int32_t)global_id;
             int32_t init_spikes = dist_spikes(rng);
             int32_t num_rules = 1;
-            write_bin(f_neurons, id);
-            write_bin(f_neurons, init_spikes);
-            write_bin(f_neurons, num_rules);
-            
-            // Default Rule: a -> a
-            RuleData rule{1, 1, 1, 0};
-            write_bin(f_neurons, rule);
+            if (f_neurons.is_open()) {
+                write_bin(f_neurons, id);
+                write_bin(f_neurons, init_spikes);
+                write_bin(f_neurons, num_rules);
+                
+                // Default Rule: a -> a
+                RuleData rule{1, 1, 1, 0};
+                write_bin(f_neurons, rule);
+            } else {
+                // Consume RNG to stay in sync
+            }
 
             // Generate Intra-edges
             int n_intra = dist_intra(rng);
@@ -196,12 +214,17 @@ int main(int argc, char** argv) {
                 std::uniform_int_distribution<uint64_t> dist_local_dst(0, count - 1);
                 uint64_t dst_local_idx = dist_local_dst(rng);
                 
-                LocalSynapseData syn;
-                syn.source_local_idx = (int32_t)i;
-                syn.dest_local_idx = (int32_t)dst_local_idx;
-                syn.weight = dist_weight(rng);
-                write_bin(f_local_syn, syn);
-                local_syn_count++;
+                if (f_local_syn.is_open()) {
+                    LocalSynapseData syn;
+                    syn.source_local_idx = (int32_t)i;
+                    syn.dest_local_idx = (int32_t)dst_local_idx;
+                    syn.weight = dist_weight(rng);
+                    write_bin(f_local_syn, syn);
+                    local_syn_count++;
+                } else {
+                    // Consume RNG
+                    dist_weight(rng);
+                }
             }
 
             // Generate Inter-edges
@@ -224,15 +247,21 @@ int main(int argc, char** argv) {
 
                 int export_idx = export_counters[dst_rank]++;
                 
-                ExportSynapseData ex_syn;
-                ex_syn.source_local_idx = (int32_t)i;
-                ex_syn.weight = dist_weight(rng);
-                write_bin(f_exports[dst_rank], ex_syn);
+                if (f_exports[dst_rank].is_open()) {
+                    ExportSynapseData ex_syn;
+                    ex_syn.source_local_idx = (int32_t)i;
+                    ex_syn.weight = dist_weight(rng);
+                    write_bin(f_exports[dst_rank], ex_syn);
+                } else {
+                    dist_weight(rng);
+                }
 
-                ImportSynapseData im_syn;
-                im_syn.export_index = export_idx;
-                im_syn.dest_local_idx = (int32_t)dst_local_idx;
-                write_bin(f_imports[dst_rank], im_syn);
+                if (f_imports[dst_rank].is_open()) {
+                    ImportSynapseData im_syn;
+                    im_syn.export_index = export_idx;
+                    im_syn.dest_local_idx = (int32_t)dst_local_idx;
+                    write_bin(f_imports[dst_rank], im_syn);
+                }
             }
         }
         
@@ -252,81 +281,85 @@ int main(int argc, char** argv) {
 
     for (int r = 0; r < config.num_ranks; ++r) {
         std::string part_filename = "partition_" + std::to_string(r) + ".dat";
-        fs::path part_path = fs::path(config.out_dir) / part_filename;
-        std::ofstream out(part_path, std::ios::binary);
-
-        // Calculate counts
-        uint64_t num_local_neurons = get_rank_size(r);
-        uint64_t num_local_synapses = fs::file_size(temp_dir / ("local_syn_" + std::to_string(r))) / sizeof(LocalSynapseData);
         
-        uint64_t num_export_groups = 0;
-        for (int dst = 0; dst < config.num_ranks; ++dst) {
-            if (r == dst) continue;
-            if (fs::exists(temp_dir / ("export_" + std::to_string(r) + "_" + std::to_string(dst)))) {
-                if (fs::file_size(temp_dir / ("export_" + std::to_string(r) + "_" + std::to_string(dst))) > 0)
-                    num_export_groups++;
+        // Only assemble if this is the target rank (or we are generating all)
+        if (config.target_rank == -1 || config.target_rank == r) {
+            fs::path part_path = fs::path(config.out_dir) / part_filename;
+            std::ofstream out(part_path, std::ios::binary);
+
+            // Calculate counts
+            uint64_t num_local_neurons = get_rank_size(r);
+            uint64_t num_local_synapses = fs::file_size(temp_dir / ("local_syn_" + std::to_string(r))) / sizeof(LocalSynapseData);
+            
+            uint64_t num_export_groups = 0;
+            for (int dst = 0; dst < config.num_ranks; ++dst) {
+                if (r == dst) continue;
+                if (fs::exists(temp_dir / ("export_" + std::to_string(r) + "_" + std::to_string(dst)))) {
+                    if (fs::file_size(temp_dir / ("export_" + std::to_string(r) + "_" + std::to_string(dst))) > 0)
+                        num_export_groups++;
+                }
             }
-        }
 
-        uint64_t num_import_groups = 0;
-        for (int src = 0; src < config.num_ranks; ++src) {
-            if (r == src) continue;
-            if (fs::exists(temp_dir / ("import_" + std::to_string(r) + "_" + std::to_string(src)))) {
-                if (fs::file_size(temp_dir / ("import_" + std::to_string(r) + "_" + std::to_string(src))) > 0)
-                    num_import_groups++;
+            uint64_t num_import_groups = 0;
+            for (int src = 0; src < config.num_ranks; ++src) {
+                if (r == src) continue;
+                if (fs::exists(temp_dir / ("import_" + std::to_string(r) + "_" + std::to_string(src)))) {
+                    if (fs::file_size(temp_dir / ("import_" + std::to_string(r) + "_" + std::to_string(src))) > 0)
+                        num_import_groups++;
+                }
             }
-        }
 
-        // Write Header
-        PartitionHeader header;
-        header.magic = PARTITION_MAGIC;
-        header.rank_id = r;
-        header.num_ranks = config.num_ranks;
-        header.num_local_neurons = num_local_neurons;
-        header.num_local_synapses = num_local_synapses;
-        header.num_export_groups = num_export_groups;
-        header.num_import_groups = num_import_groups;
-        write_bin(out, header);
+            // Write Header
+            PartitionHeader header;
+            header.magic = PARTITION_MAGIC;
+            header.rank_id = r;
+            header.num_ranks = config.num_ranks;
+            header.num_local_neurons = num_local_neurons;
+            header.num_local_synapses = num_local_synapses;
+            header.num_export_groups = num_export_groups;
+            header.num_import_groups = num_import_groups;
+            write_bin(out, header);
 
-        // Copy Neurons
-        {
-            std::ifstream in(temp_dir / ("neurons_" + std::to_string(r)), std::ios::binary);
-            out << in.rdbuf();
-        }
-
-        // Copy Local Synapses
-        {
-            std::ifstream in(temp_dir / ("local_syn_" + std::to_string(r)), std::ios::binary);
-            out << in.rdbuf();
-        }
-
-        // Write Export Groups
-        for (int dst = 0; dst < config.num_ranks; ++dst) {
-            if (r == dst) continue;
-            fs::path p = temp_dir / ("export_" + std::to_string(r) + "_" + std::to_string(dst));
-            if (fs::exists(p) && fs::file_size(p) > 0) {
-                ExportGroupHeader gh;
-                gh.target_rank = dst;
-                gh.num_synapses = fs::file_size(p) / sizeof(ExportSynapseData);
-                write_bin(out, gh);
-                
-                std::ifstream in(p, std::ios::binary);
+            // Copy Neurons
+            {
+                std::ifstream in(temp_dir / ("neurons_" + std::to_string(r)), std::ios::binary);
                 out << in.rdbuf();
             }
-        }
 
-        // Write Import Groups
-        for (int src = 0; src < config.num_ranks; ++src) {
-            if (r == src) continue;
-            fs::path p = temp_dir / ("import_" + std::to_string(r) + "_" + std::to_string(src));
-            if (fs::exists(p) && fs::file_size(p) > 0) {
-                ImportGroupHeader gh;
-                gh.source_rank = src;
-                gh.num_synapses = fs::file_size(p) / sizeof(ImportSynapseData);
-                write_bin(out, gh);
-                
-                std::ifstream in(p, std::ios::binary);
+            // Copy Local Synapses
+            {
+                std::ifstream in(temp_dir / ("local_syn_" + std::to_string(r)), std::ios::binary);
                 out << in.rdbuf();
+            }
+
+            // Write Export Groups
+            for (int dst = 0; dst < config.num_ranks; ++dst) {
+                if (r == dst) continue;
+                fs::path p = temp_dir / ("export_" + std::to_string(r) + "_" + std::to_string(dst));
+                if (fs::exists(p) && fs::file_size(p) > 0) {
+                    ExportGroupHeader gh;
+                    gh.target_rank = dst;
+                    gh.num_synapses = fs::file_size(p) / sizeof(ExportSynapseData);
+                    write_bin(out, gh);
+                    
+                    std::ifstream in(p, std::ios::binary);
+                    out << in.rdbuf();
+                }
+            }
+
+            // Write Import Groups
+            for (int src = 0; src < config.num_ranks; ++src) {
+                if (r == src) continue;
+                fs::path p = temp_dir / ("import_" + std::to_string(r) + "_" + std::to_string(src));
+                if (fs::exists(p) && fs::file_size(p) > 0) {
+                    ImportGroupHeader gh;
+                    gh.source_rank = src;
+                    gh.num_synapses = fs::file_size(p) / sizeof(ImportSynapseData);
+                    write_bin(out, gh);
+                    
+                    std::ifstream in(p, std::ios::binary);
+                    out << in.rdbuf();
+                }
             }
         }
 

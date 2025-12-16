@@ -1,0 +1,9 @@
+{
+  "global_neurons": 1000000,
+  "nodes": 3,
+  "partitions": [
+    "partition_0.dat",
+    "partition_1.dat",
+    "partition_2.dat"
+  ]
+}

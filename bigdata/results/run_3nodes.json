@@ -1,0 +1,7 @@
+{
+  "nodes": 3,
+  "steps": 5,
+  "total_time_s": 0.048187,
+  "max_comm_time_ms": 43.4116,
+  "max_compute_time_ms": 3.52337
+}
