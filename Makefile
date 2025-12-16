@@ -116,3 +116,53 @@ run-distributed:
 microbenchmark: distribute ## Run microbenchmark tool (use: make microbenchmark -- -n 1000 -i cuda)
 	$(MAKE) run-distributed ARGS="$(REMOTE_DIR)/bin/microbenchmark $(ARGS)"
 
+
+# --- Big Data Benchmark ---
+
+# Defaults
+NEURONS ?= 1000000
+PINTRA ?= 10
+PINTER ?= 1
+STEPS ?= 5
+OUTDIR ?= $(REMOTE_DIR)/bigdata/output
+SEED ?= 123
+MEM_LIMIT_GB ?= 0
+
+# NODES and HOSTS are tricky. 
+# If HOSTS is defined (comma sep), we use it for mpirun.
+# We also need to derive a space-separated list for 'distribute'.
+ifdef HOSTS
+    MPI_HOSTS := $(HOSTS)
+    DIST_NODES := $(shell echo $(HOSTS) | tr ',' ' ')
+    NUM_NODES := $(shell echo $(HOSTS) | tr ',' '\n' | wc -l)
+else
+    # Fallback to existing NODES variable
+    MPI_HOSTS := $(shell echo $(NODES) | tr ' ' ',')
+    DIST_NODES := $(NODES)
+    NUM_NODES := $(shell echo $(NODES) | wc -w)
+endif
+
+# Allow overriding count explicitly if needed (e.g. multiple ranks per node)
+ifdef RANKS
+    NUM_RANKS := $(RANKS)
+else
+    NUM_RANKS := $(NUM_NODES)
+endif
+
+bigdata-generate: build ## Generate Big Data dataset
+	@echo "$(BLUE)Generating Big Data dataset...$(NC)"
+	$(MAKE) run-distributed ARGS="mkdir -p $(OUTDIR)"
+	$(MAKE) run-distributed ARGS="$(REMOTE_DIR)/bin/bigdata_generator \
+		--neurons $(NEURONS) \
+		--ranks $(NUM_RANKS) \
+		--intra $(PINTRA) \
+		--inter $(PINTER) \
+		--outdir $(OUTDIR) \
+		--seed $(SEED) \
+		--mem-limit $(MEM_LIMIT_GB)"
+
+bigdata-run: ## Run Big Data simulation
+	@$(MAKE) distribute NODES="$(DIST_NODES)"
+	@echo "$(BLUE)Running Big Data simulation on $(NUM_RANKS) ranks ($(MPI_HOSTS))...$(NC)"
+	$(MAKE) run-distributed ARGS="$(REMOTE_DIR)/bin/bigdata_run $(OUTDIR)/descriptor.json $(STEPS)"
+	@echo "$(GREEN)✓$(NC) Run complete. Results in $(OUTDIR)/results.json"

@@ -30,6 +30,20 @@ public:
     virtual bool loadSystem(const SnpSystemConfig& config) = 0;
 
     /**
+     * @brief Loads a pre-partitioned system from a file.
+     * 
+     * This is used for "Big Data" scenarios where the full system cannot fit in memory.
+     * Each rank loads only its own partition.
+     * 
+     * @param partition_file Path to the partition file for this rank.
+     * @return true if successful.
+     */
+    virtual bool loadPresplitSystem(const std::string& partition_file) {
+        (void)partition_file;
+        return false; 
+    }
+
+    /**
      * @brief Advances the simulation by a specified number of time steps.
      * * Implements the matrix equation: C(k+1) = C(k) + Sp(k) * M
      * Handles GPU kernel launches and MPI synchronization automatically.

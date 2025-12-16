@@ -93,7 +93,7 @@ The Makefile must handle all necessary compilation and MPI execution details.
 Support configuring via Make variables and/or environment variables:
 - `OUTDIR=output/bigdata`
 - `NODES=2`
-- `HOSTS="host1,host2"` or `HOSTFILE=hostfile.txt`
+- `HOSTS="host1,host2"`
 - `NEURONS=...`
 - `PINTRA=...` (within-node connectivity)
 - `PINTER=...` (between-node connectivity)
@@ -103,11 +103,20 @@ Support configuring via Make variables and/or environment variables:
 - `SEED=123`
 
 ## Acceptance criteria (definition of done)
+- Source code in the ./bigdata/ directory implementing the above functionality.
 - `make bigdata-generate` produces a descriptor and per-node partition files.
 - The generated dataset is large enough to fail the single-machine memory check (unless the user lowers the threshold).
 - `make bigdata-run` runs a short MPI distributed simulation where each rank loads only its local partition.
 - Running with `NODES=2` and then `NODES=3` with constant total dataset size produces comparable structured logs.
 - The logs include total time and MPI communication overhead, and can be used to assess scaling.
+- Results must be created in the ./bigdata/results/ directory.
+
+## Reference files
+- `src/snp/ISnpSimulator.hpp` (for simulator interface)
+- `src/snp/OptimizedCudaMpiSnpSimulator.cu` (for existing MPI + CUDA simulator)
+- `Makefile` (for build and MPI execution patterns)
+- `tests/snp/SnpSimulatorTest.cpp` (for existing test patterns)
+- `src/snp/SnpSystemConfig.hpp` (for SNP system representation. May need extension to efficiently support partitioned loading and big data)
 
 ## Notes / constraints
 - Keep implementation minimal and aligned with existing project architecture (interfaces, factories, build system).

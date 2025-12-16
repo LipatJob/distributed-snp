@@ -174,3 +174,18 @@ message(STATUS "Output Directory:    ${CMAKE_BINARY_DIR}/bin")
 message(STATUS "CUDA Architecture:   ${CUDA_ARCH_TARGET}")
 message(STATUS "MPI Test Hosts:      ${MPI_TEST_HOSTS}")
 message(STATUS "-------------------------------------------------")
+# ============================================================================
+# 8. Big Data Benchmark
+# ============================================================================
+
+add_executable(bigdata_generator bigdata/BigDataGenerator.cpp)
+target_include_directories(bigdata_generator PRIVATE ${PROJECT_SOURCE_DIR}/bigdata)
+
+add_executable(bigdata_run bigdata/BigDataRun.cpp)
+target_include_directories(bigdata_run PRIVATE ${PROJECT_SOURCE_DIR}/bigdata)
+target_link_libraries(bigdata_run PRIVATE snp_system MPI::MPI_CXX)
+set_target_properties(bigdata_run PROPERTIES
+    CUDA_SEPARABLE_COMPILATION ON
+    CUDA_RESOLVE_DEVICE_SYMBOLS ON
+    CUDA_ARCHITECTURES ${CUDA_ARCH_TARGET}
+)

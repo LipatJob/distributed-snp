@@ -6,6 +6,7 @@
 #include "LinearPartitioner.hpp"
 #include "LouvainPartitioner.hpp"
 #include "RedBluePartitioner.hpp"
+#include "../../bigdata/BigDataCommon.hpp"
 #include <mpi.h>
 #include <cuda_runtime.h>
 #include <vector>
@@ -13,6 +14,7 @@
 #include <map>
 #include <set>
 #include <iostream>
+#include <fstream>
 #include <sstream>
 #include <numeric>
 #include <cstring>
@@ -459,6 +461,195 @@ public:
         // 4. Analyze Topology & Prepare Synapses (The Complex Part)
         prepareTopology(config);
 
+        return true;
+    }
+
+    bool loadPresplitSystem(const std::string& partition_file) override {
+        std::ifstream in(partition_file, std::ios::binary);
+        if (!in) {
+            std::cerr << "Rank " << mpi_rank << ": Failed to open " << partition_file << std::endl;
+            return false;
+        }
+
+        bigdata::PartitionHeader header;
+        in.read(reinterpret_cast<char*>(&header), sizeof(header));
+        if (header.magic != bigdata::PARTITION_MAGIC) {
+            std::cerr << "Rank " << mpi_rank << ": Invalid magic number" << std::endl;
+            return false;
+        }
+
+        local_num_neurons = header.num_local_neurons;
+        
+        // Exchange counts to build global map (for getGlobalState)
+        rank_counts.resize(mpi_size);
+        MPI_Allgather(&local_num_neurons, 1, MPI_INT, rank_counts.data(), 1, MPI_INT, MPI_COMM_WORLD);
+        
+        rank_start_indices.resize(mpi_size);
+        rank_start_indices[0] = 0;
+        for (int i = 1; i < mpi_size; ++i) {
+            rank_start_indices[i] = rank_start_indices[i-1] + rank_counts[i-1];
+        }
+        global_num_neurons = rank_start_indices.back() + rank_counts.back();
+        local_start_idx = rank_start_indices[mpi_rank];
+        local_end_idx = local_start_idx + local_num_neurons;
+
+        // Allocate Neurons
+        d_neurons.allocate(local_num_neurons);
+
+        // Read Neurons & Rules
+        std::vector<int> h_config(local_num_neurons);
+        std::vector<int> h_rule_start(local_num_neurons);
+        std::vector<int> h_rule_count(local_num_neurons);
+        
+        // Temp storage for rules
+        struct TempRule {
+            int nid;
+            bigdata::RuleData data;
+        };
+        std::vector<TempRule> all_rules;
+
+        for (int i = 0; i < local_num_neurons; ++i) {
+            int32_t id, init_spikes, num_rules;
+            in.read(reinterpret_cast<char*>(&id), sizeof(id));
+            in.read(reinterpret_cast<char*>(&init_spikes), sizeof(init_spikes));
+            in.read(reinterpret_cast<char*>(&num_rules), sizeof(num_rules));
+            
+            h_config[i] = init_spikes;
+            h_rule_start[i] = all_rules.size();
+            h_rule_count[i] = num_rules;
+
+            for (int k = 0; k < num_rules; ++k) {
+                bigdata::RuleData rd;
+                in.read(reinterpret_cast<char*>(&rd), sizeof(rd));
+                all_rules.push_back({i, rd});
+            }
+        }
+
+        // Upload Neurons
+        CUDA_CHECK(cudaMemcpy(d_neurons.initial_config, h_config.data(), local_num_neurons * sizeof(int), cudaMemcpyHostToDevice));
+        
+        // Upload Rules
+        d_rules.allocate(all_rules.size(), local_num_neurons);
+        if (!all_rules.empty()) {
+            std::vector<int> r_nid, r_thresh, r_cons, r_prod, r_delay;
+            for (const auto& tr : all_rules) {
+                r_nid.push_back(tr.nid);
+                r_thresh.push_back(tr.data.input_threshold);
+                r_cons.push_back(tr.data.spikes_consumed);
+                r_prod.push_back(tr.data.spikes_produced);
+                r_delay.push_back(tr.data.delay);
+            }
+            CUDA_CHECK(cudaMemcpy(d_rules.neuron_id, r_nid.data(), all_rules.size() * sizeof(int), cudaMemcpyHostToDevice));
+            CUDA_CHECK(cudaMemcpy(d_rules.input_threshold, r_thresh.data(), all_rules.size() * sizeof(int), cudaMemcpyHostToDevice));
+            CUDA_CHECK(cudaMemcpy(d_rules.spikes_consumed, r_cons.data(), all_rules.size() * sizeof(int), cudaMemcpyHostToDevice));
+            CUDA_CHECK(cudaMemcpy(d_rules.spikes_produced, r_prod.data(), all_rules.size() * sizeof(int), cudaMemcpyHostToDevice));
+            CUDA_CHECK(cudaMemcpy(d_rules.delay, r_delay.data(), all_rules.size() * sizeof(int), cudaMemcpyHostToDevice));
+        }
+        CUDA_CHECK(cudaMemcpy(d_rules.rule_start_idx, h_rule_start.data(), local_num_neurons * sizeof(int), cudaMemcpyHostToDevice));
+        CUDA_CHECK(cudaMemcpy(d_rules.rule_count, h_rule_count.data(), local_num_neurons * sizeof(int), cudaMemcpyHostToDevice));
+
+        // Read Local Synapses
+        d_local_synapses.allocate(header.num_local_synapses);
+        if (header.num_local_synapses > 0) {
+            std::vector<bigdata::LocalSynapseData> h_syn(header.num_local_synapses);
+            in.read(reinterpret_cast<char*>(h_syn.data()), header.num_local_synapses * sizeof(bigdata::LocalSynapseData));
+            
+            std::vector<int> s_src, s_dst, s_w;
+            for (const auto& s : h_syn) {
+                s_src.push_back(s.source_local_idx);
+                s_dst.push_back(s.dest_local_idx);
+                s_w.push_back(s.weight);
+            }
+            CUDA_CHECK(cudaMemcpy(d_local_synapses.source_idx, s_src.data(), header.num_local_synapses * sizeof(int), cudaMemcpyHostToDevice));
+            CUDA_CHECK(cudaMemcpy(d_local_synapses.dest_idx, s_dst.data(), header.num_local_synapses * sizeof(int), cudaMemcpyHostToDevice));
+            CUDA_CHECK(cudaMemcpy(d_local_synapses.weight, s_w.data(), header.num_local_synapses * sizeof(int), cudaMemcpyHostToDevice));
+        }
+
+        // Read Export Groups
+        std::vector<int> ex_src, ex_buf_idx, ex_w;
+        comm_map.assign(mpi_size, {});
+        int current_export_offset = 0;
+
+        for (uint64_t g = 0; g < header.num_export_groups; ++g) {
+            bigdata::ExportGroupHeader gh;
+            in.read(reinterpret_cast<char*>(&gh), sizeof(gh));
+            
+            comm_map[gh.target_rank].export_offset = current_export_offset;
+            comm_map[gh.target_rank].export_count = gh.num_synapses;
+            comm_map[gh.target_rank].send_size = gh.num_synapses;
+            
+            // Allocate pinned memory
+            if (gh.num_synapses > 0) {
+                CUDA_CHECK(cudaHostAlloc(&comm_map[gh.target_rank].h_send_buf, gh.num_synapses * sizeof(int), cudaHostAllocDefault));
+            }
+
+            std::vector<bigdata::ExportSynapseData> h_ex(gh.num_synapses);
+            in.read(reinterpret_cast<char*>(h_ex.data()), gh.num_synapses * sizeof(bigdata::ExportSynapseData));
+            
+            for (size_t k = 0; k < h_ex.size(); ++k) {
+                ex_src.push_back(h_ex[k].source_local_idx);
+                ex_buf_idx.push_back(current_export_offset + k);
+                ex_w.push_back(h_ex[k].weight);
+            }
+            current_export_offset += gh.num_synapses;
+        }
+        total_export_size = current_export_offset;
+
+        d_export_synapses.allocate(ex_src.size());
+        if (!ex_src.empty()) {
+            CUDA_CHECK(cudaMemcpy(d_export_synapses.source_idx, ex_src.data(), ex_src.size() * sizeof(int), cudaMemcpyHostToDevice));
+            CUDA_CHECK(cudaMemcpy(d_export_synapses.export_buf_idx, ex_buf_idx.data(), ex_src.size() * sizeof(int), cudaMemcpyHostToDevice));
+            CUDA_CHECK(cudaMemcpy(d_export_synapses.weight, ex_w.data(), ex_src.size() * sizeof(int), cudaMemcpyHostToDevice));
+        }
+
+        // Read Import Groups
+        std::vector<int> im_buf_idx, im_dst;
+        int current_import_offset = 0;
+        
+        std::map<int, std::vector<bigdata::ImportSynapseData>> import_groups;
+        for (uint64_t g = 0; g < header.num_import_groups; ++g) {
+            bigdata::ImportGroupHeader gh;
+            in.read(reinterpret_cast<char*>(&gh), sizeof(gh));
+            std::vector<bigdata::ImportSynapseData> h_im(gh.num_synapses);
+            in.read(reinterpret_cast<char*>(h_im.data()), gh.num_synapses * sizeof(bigdata::ImportSynapseData));
+            import_groups[gh.source_rank] = std::move(h_im);
+        }
+
+        // Now iterate ranks to build contiguous buffer map
+        for (int r = 0; r < mpi_size; ++r) {
+            if (import_groups.count(r)) {
+                const auto& vec = import_groups[r];
+                comm_map[r].import_offset = current_import_offset;
+                comm_map[r].import_count = vec.size();
+                comm_map[r].recv_size = vec.size();
+                
+                // Allocate pinned memory
+                if (vec.size() > 0) {
+                    CUDA_CHECK(cudaHostAlloc(&comm_map[r].h_recv_buf, vec.size() * sizeof(int), cudaHostAllocDefault));
+                }
+
+                for (const auto& s : vec) {
+                    im_buf_idx.push_back(current_import_offset + s.export_index);
+                    im_dst.push_back(s.dest_local_idx);
+                }
+                current_import_offset += vec.size();
+            }
+        }
+        total_import_size = current_import_offset;
+
+        d_import_map.allocate(im_buf_idx.size());
+        if (!im_buf_idx.empty()) {
+            CUDA_CHECK(cudaMemcpy(d_import_map.import_buf_idx, im_buf_idx.data(), im_buf_idx.size() * sizeof(int), cudaMemcpyHostToDevice));
+            CUDA_CHECK(cudaMemcpy(d_import_map.dest_idx, im_dst.data(), im_buf_idx.size() * sizeof(int), cudaMemcpyHostToDevice));
+        }
+
+        // Allocate Buffers
+        if (total_export_size > 0) CUDA_CHECK(cudaMalloc(&d_export_buffer, total_export_size * sizeof(int)));
+        if (total_import_size > 0) CUDA_CHECK(cudaMalloc(&d_import_buffer, total_import_size * sizeof(int)));
+
+        // Reset
+        reset();
+        
         return true;
     }
 
