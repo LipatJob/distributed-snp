@@ -1,281 +1,223 @@
 #!/bin/bash
 
-# SNP System Profiling Script with NVIDIA Nsight Systems and Nsight Compute
-# Profiles different SNP implementations (CPU, CUDA, MPI) using nsys and ncu CLI
-# Handles distributed deployments by copying binaries to all nodes
+# SNP System Profiling Script - Simplified Version
+# Profiles SNP implementations using nsys and ncu
 
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
-HOSTFILE="${PROJECT_ROOT}/hostfile.txt"
 OUTPUT_DIR="${PROJECT_ROOT}/profiling/results"
-
-
 BUILD_DIR="/home/shared/tmp/distributed-snp-new"
 PROFILE_EXEC="${BUILD_DIR}/bin/snp_profile"
 
-# Create output directory
 mkdir -p "$OUTPUT_DIR"
 
-# Default options
-NUM_PROCS=2
-IMPLEMENTATION="all"
-USE_HOSTFILE=true
+# Defaults
+IMPLEMENTATIONS=("optimized-cuda-mpi")
+PARTITIONERS=("linear")
+PROFILER="nsys"
+STEPS=""
+ARRAY_SIZE="2048"
+OUTPUT_PREFIX="snp_profile"
 NSYS_OPTS=""
 NCU_OPTS=""
-PROFILER="nsys"  # Options: nsys, ncu, both
-OUTPUT_PREFIX="snp_profile"
-STEPS=""  # Empty means run to completion (max steps)
-PARTITIONER=""  # Empty means use default (linear); Options: linear, louvain, red-blue
-ARRAY_SIZE="2048"  # Default array size
+BATCH_TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 
-# Colors for output
+# Colors
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 RED='\033[0;31m'
 NC='\033[0m'
 
-# Logging functions
 log_step() { echo -e "${BLUE}▶${NC} $1"; }
 log_success() { echo -e "${GREEN}✓${NC} $1"; }
 log_error() { echo -e "${RED}✗${NC} $1"; }
 log_warn() { echo -e "${YELLOW}→${NC} $1"; }
-
-# ============================================================================
-# Helper Functions
-# ============================================================================
-
-print_header() {
-    echo -e "${BLUE}══════════════════════════════════════════════════════${NC}"
-    echo -e "${BLUE}  SNP System Profiling${NC}"
-    echo -e "${BLUE}══════════════════════════════════════════════════════${NC}"
-    echo ""
-}
 
 print_usage() {
     cat << EOF
 Usage: $0 [options]
 
 Options:
-  -i, --implementation NAME  Implementation (default: all)
+  -i, --implementation LIST  Comma-separated implementations with optional partitioner
+                            Format: impl[:partitioner]
+                            Implementations: cpu, optimized-cuda, sparse-cuda, naive-cuda-mpi, optimized-cuda-mpi
+                            Partitioners: linear, louvain, rb (default: linear for MPI)
   -p, --profiler TOOL       nsys, ncu, or both (default: nsys)
   -s, --steps N             Number of steps (default: max)
-  --partitioner TYPE        linear, louvain, or red-blue (default: linear)
-  --array-size N            Array size (default: 2048)
+  -as, --array-size N       Array size (default: 2048)
   -h, --help                Show help
-
-Implementations: cpu, optimized-cuda, sparse-cuda, naive-cuda-mpi, optimized-cuda-mpi
 
 Examples:
   $0 -i optimized-cuda -p ncu
-  $0 -i optimized-cuda-mpi --partitioner louvain -s 100
+  $0 -i optimized-cuda-mpi:rb
+  $0 -i optimized-cuda-mpi:linear,naive-cuda-mpi:rb,sparse-cuda -p both
+  $0 -i optimized-cuda-mpi:louvain -s 100
 EOF
 }
 
 check_dependencies() {
-    if [[ "$PROFILER" == "nsys" ]] || [[ "$PROFILER" == "both" ]]; then
-        if ! command -v nsys &> /dev/null; then
-            log_error "NVIDIA Nsight Systems (nsys) not found"
-            exit 1
-        fi
-    fi
-    
-    if [[ "$PROFILER" == "ncu" ]] || [[ "$PROFILER" == "both" ]]; then
-        if ! command -v ncu &> /dev/null; then
-            log_error "NVIDIA Nsight Compute (ncu) not found"
-            exit 1
-        fi
-    fi
-    
-    if [ ! -f "$PROFILE_EXEC" ]; then
-        log_error "Profile executable not found at $PROFILE_EXEC"
-        exit 1
-    fi
-    
+    [[ "$PROFILER" =~ ^(nsys|both)$ ]] && ! command -v nsys &> /dev/null && log_error "nsys not found" && exit 1
+    [[ "$PROFILER" =~ ^(ncu|both)$ ]] && ! command -v ncu &> /dev/null && log_error "ncu not found" && exit 1
+    [ ! -f "$PROFILE_EXEC" ] && log_error "Profile executable not found: $PROFILE_EXEC" && exit 1
     log_success "Dependencies verified"
 }
 
-run_profiling_nsys() {
-    local impl="$1"
-    local timestamp=$(date +%Y%m%d_%H%M%S)
-    local output_file="${OUTPUT_DIR}/${OUTPUT_PREFIX}_nsys_${impl}_${timestamp}_%h_rank%q{OMPI_COMM_WORLD_RANK}"
-    
-    log_step "Profiling with Nsight Systems: ${impl}"
-    
-    local nsys_cmd="/usr/local/cuda/bin/nsys profile --capture-range=cudaProfilerApi \
---trace=cuda,mpi,nvtx,osrt --output=$output_file --force-overwrite=true --stats=true"
-    
-    [ -n "$NSYS_OPTS" ] && nsys_cmd="$nsys_cmd $NSYS_OPTS"
-
-    local mpi_cmd="mpirun -np 2 --host localhost,10.0.0.2 --mca btl_tcp_if_include ens5 --mca oob_tcp_if_include ens5"
-    
-    local args="$impl ${STEPS:-0} ${PARTITIONER:-linear} $ARRAY_SIZE"
-    local full_cmd="$mpi_cmd $nsys_cmd $PROFILE_EXEC $args"
-    
-    eval $full_cmd 2>&1 | grep -v "^Collecting" || true
-    
-    log_success "Profile saved: ${output_file}.nsys-rep"
-    echo ""
+get_output_dir() {
+    local tool="$1"
+    local impl="$2"
+    local partitioner="$3"
+    echo "${OUTPUT_DIR}/${tool}/${BATCH_TIMESTAMP}/${impl}-${partitioner}"
 }
 
-run_profiling_ncu() {
+get_base_filename() {
     local impl="$1"
-    local timestamp=$(date +%Y%m%d_%H%M%S)
-    local output_file="${OUTPUT_DIR}/${OUTPUT_PREFIX}_ncu_${impl}_${timestamp}"
+    local tool="$2"
+    local partitioner="$3"
+    local outdir=$(get_output_dir "$tool" "$impl" "$partitioner")
+    mkdir -p "$outdir"
+    echo "${outdir}/${OUTPUT_PREFIX}"
+}
+
+extract_nsys_stats() {
+    local base_pattern="$1"
     
-    if [[ "$impl" != *"cuda"* ]]; then
-        log_warn "Skipping NCU for non-GPU implementation: $impl"
-        return
+    log_step "Extracting nsys metrics..."
+    
+    # Find actual generated files (nsys expands %h_rank%q patterns)
+    local rep_files=$(ls ${base_pattern}*.nsys-rep 2>/dev/null || echo "")
+    
+    if [ -z "$rep_files" ]; then
+        log_warn "No nsys-rep files found"
+        return 1
     fi
     
-    log_step "Profiling with Nsight Compute: ${impl}"
+    for rep_file in $rep_files; do
+        local base="${rep_file%.nsys-rep}"
+        nsys stats --report cuda_api_sum,cuda_gpu_kern_sum,cuda_gpu_mem_time_sum,mpi_sum,nvtx_sum \
+            --format csv --output "${base}_stats" "$rep_file" 2>/dev/null || true
+        echo "  $(basename ${base}_stats.csv)"
+    done
     
-    local ncu_cmd="/usr/local/cuda/bin/ncu --set full --export $output_file --force-overwrite --call-stack"
-    [ -n "$NCU_OPTS" ] && ncu_cmd="/usr/local/cuda/bin/ncu $NCU_OPTS --export $output_file --force-overwrite"
+    log_success "Metrics exported"
+}
 
-    if [[ "$impl" == *"mpi"* ]]; then
-        output_file="${output_file}_%h_rank%q{OMPI_COMM_WORLD_RANK}"
-        local mpi_cmd="mpirun -np 2 --host localhost,10.0.0.2 --mca btl_tcp_if_include ens5 --mca oob_tcp_if_include ens5"
-        local args="$impl ${STEPS:-0} ${PARTITIONER:-linear} $ARRAY_SIZE"
-        eval "$mpi_cmd $ncu_cmd $PROFILE_EXEC $args" 2>&1 | grep -v "^==" || true
+run_mpi_profiler() {
+    local tool="$1"
+    local impl="$2"
+    local partitioner="$3"
+    local base=$(get_base_filename "$impl" "$tool" "$partitioner")
+    local output="${base}_%h_rank%q{OMPI_COMM_WORLD_RANK}"
+    
+    local mpi_cmd="mpirun -np 2 --host localhost,10.0.0.2 \
+        --mca btl_tcp_if_include ens5 --mca oob_tcp_if_include ens5"
+    
+    local profiler_cmd=""
+    if [ "$tool" == "nsys" ]; then
+        profiler_cmd="/usr/local/cuda/bin/nsys profile --capture-range=cudaProfilerApi \
+            --trace=cuda,mpi,nvtx,osrt --output=$output \
+            --force-overwrite=true --stats=true $NSYS_OPTS"
     else
-        local args="$impl ${STEPS:-0} linear $ARRAY_SIZE"
-        eval "$ncu_cmd $PROFILE_EXEC $args" 2>&1 | grep -v "^==" || true
+        local ncu_opts="${NCU_OPTS:---set full --call-stack}"
+        profiler_cmd="/usr/local/cuda/bin/ncu $ncu_opts --export $output --force-overwrite"
     fi
     
-    log_success "Profile saved: ${output_file}.ncu-rep"
+    local app_cmd="$PROFILE_EXEC $impl ${STEPS:-0} $partitioner $ARRAY_SIZE"
     
-    # Extract metrics
-    local relevant_metrics=(
-        "gpu__time_duration.sum" "l1tex__data_bank_conflicts_pipe_lsu_mem_shared.sum"
-        "smsp__average_warps_issue_stalled_barrier_per_issue_active.pct"
-        "l1tex__t_bytes_lookup_hit.sum" "l1tex__t_bytes_lookup_miss.sum"
-        "dram__bytes_read.sum" "dram__bytes_write.sum"
-    )
-    ncu --import $output_file.ncu-rep --metrics $(IFS=, ; echo "${relevant_metrics[*]}") \
-        --page raw --csv > "${output_file}_metrics.csv" 2>/dev/null
-    log_success "Metrics exported: ${output_file}_metrics.csv"
-    echo ""
+    eval "$mpi_cmd $profiler_cmd $app_cmd" 2>&1 | grep -v "^Collecting\|^==" || true
+    
+    log_success "Profile saved: ${base}*"
+    
+    [ "$tool" == "nsys" ] && extract_nsys_stats "$base"
 }
 
-run_profiling() {
+run_profiling_for_impl() {
     local impl="$1"
+    local partitioner="$2"
+    
+    echo ""
+    log_step "Profiling: $impl (partitioner: $partitioner)"
     
     case $PROFILER in
         nsys)
-            run_profiling_nsys "$impl"
+            run_mpi_profiler "nsys" "$impl" "$partitioner"
             ;;
         ncu)
-            run_profiling_ncu "$impl"
+            if [[ "$impl" != *"cuda"* ]]; then
+                log_warn "Skipping NCU for non-CUDA implementation: $impl"
+                return
+            fi
+            run_mpi_profiler "ncu" "$impl" "$partitioner"
             ;;
         both)
-            run_profiling_nsys "$impl"
-            run_profiling_ncu "$impl"
-            ;;
-        *)
-            echo -e "${RED}Error: Unknown profiler '$PROFILER'${NC}"
-            exit 1
+            run_mpi_profiler "nsys" "$impl" "$partitioner"
+            if [[ "$impl" == *"cuda"* ]]; then
+                echo ""
+                run_mpi_profiler "ncu" "$impl" "$partitioner"
+            fi
             ;;
     esac
 }
 
-# ============================================================================
-# Parse Command Line Arguments
-# ============================================================================
+run_profiling_batch() {
+    echo -e "${BLUE}══════════════════════════════════════════════════════${NC}"
+    echo -e "${BLUE}  SNP System Profiling${NC}"
+    echo -e "${BLUE}══════════════════════════════════════════════════════${NC}"
+    echo "  Implementations:"
+    for i in "${!IMPLEMENTATIONS[@]}"; do
+        echo "    - ${IMPLEMENTATIONS[$i]} (${PARTITIONERS[$i]})"
+    done
+    echo "  Profiler: $PROFILER"
+    echo "  Steps: ${STEPS:-max}"
+    echo "  Array Size: $ARRAY_SIZE"
+    echo "  Batch ID: $BATCH_TIMESTAMP"
+    echo ""
+    
+    check_dependencies
+    
+    for i in "${!IMPLEMENTATIONS[@]}"; do
+        run_profiling_for_impl "${IMPLEMENTATIONS[$i]}" "${PARTITIONERS[$i]}"
+    done
+    
+    echo ""
+    echo -e "${GREEN}══════════════════════════════════════════════════════${NC}"
+    echo -e "${GREEN}  Profiling Complete${NC}"
+    echo -e "${GREEN}══════════════════════════════════════════════════════${NC}"
+    echo -e "  Results: ${OUTPUT_DIR}/${PROFILER}/${BATCH_TIMESTAMP}/"
+    echo ""
+}
 
+# Parse arguments
 while [[ $# -gt 0 ]]; do
     case $1 in
-        -i|--implementation)
-            IMPLEMENTATION="$2"
-            shift 2
+        -i|--implementation) 
+            IFS=',' read -ra IMPL_LIST <<< "$2"
+            IMPLEMENTATIONS=()
+            PARTITIONERS=()
+            for item in "${IMPL_LIST[@]}"; do
+                if [[ "$item" == *":"* ]]; then
+                    # Split impl:partitioner
+                    IMPLEMENTATIONS+=("${item%%:*}")
+                    PARTITIONERS+=("${item##*:}")
+                else
+                    # No partitioner specified, use default
+                    IMPLEMENTATIONS+=("$item")
+                    PARTITIONERS+=("linear")
+                fi
+            done
+            shift 2 
             ;;
-        -n|--num-procs)
-            NUM_PROCS="$2"
-            shift 2
-            ;;
-        --hostfile)
-            HOSTFILE="$2"
-            shift 2
-            ;;
-        --no-hostfile)
-            USE_HOSTFILE=false
-            shift
-            ;;
-        -p|--profiler)
-            PROFILER="$2"
-            shift 2
-            ;;
-        --nsys-opts)
-            NSYS_OPTS="$2"
-            shift 2
-            ;;
-        --ncu-opts)
-            NCU_OPTS="$2"
-            shift 2
-            ;;
-        -o|--output)
-            OUTPUT_PREFIX="$2"
-            shift 2
-            ;;
-        -s|--steps)
-            STEPS="$2"
-            shift 2
-            ;;
-        -pt|--partitioner)
-            PARTITIONER="$2"
-            shift 2
-            ;;
-        -as|--array-size)
-            ARRAY_SIZE="$2"
-            shift 2
-            ;;
-        -h|--help)
-            print_usage
-            exit 0
-            ;;
-        *)
-            log_error "Unknown option: $1"
-            print_usage
-            exit 1
-            ;;
+        -p|--profiler) PROFILER="$2"; shift 2 ;;
+        -s|--steps) STEPS="$2"; shift 2 ;;
+        -as|--array-size) ARRAY_SIZE="$2"; shift 2 ;;
+        --nsys-opts) NSYS_OPTS="$2"; shift 2 ;;
+        --ncu-opts) NCU_OPTS="$2"; shift 2 ;;
+        -h|--help) print_usage; exit 0 ;;
+        *) log_error "Unknown option: $1"; print_usage; exit 1 ;;
     esac
 done
 
-# ============================================================================
-# Main Execution
-# ============================================================================
-
-print_header
-
-echo "  Implementation: $IMPLEMENTATION"
-echo "  Profiler: $PROFILER"
-[ -n "$STEPS" ] && echo "  Steps: $STEPS" || echo "  Steps: max"
-[ -n "$PARTITIONER" ] && echo "  Partitioner: $PARTITIONER"
-echo "  Array Size: $ARRAY_SIZE"
-echo ""
-
-check_dependencies
-
-# Run profiling
-case $IMPLEMENTATION in
-    cpu|optimized-cuda|sparse-cuda|naive-cuda-mpi|optimized-cuda-mpi)
-        run_profiling "$IMPLEMENTATION"
-        ;;
-    *)
-        log_error "Unknown implementation: $IMPLEMENTATION"
-        exit 1
-        ;;
-esac
-
-echo ""
-echo -e "${GREEN}══════════════════════════════════════════════════════${NC}"
-echo -e "${GREEN}  Profiling Complete${NC}"
-echo -e "${GREEN}══════════════════════════════════════════════════════${NC}"
-echo -e "  Results: $OUTPUT_DIR"
-[[ "$PROFILER" == "nsys" ]] || [[ "$PROFILER" == "both" ]] && \
-    echo -e "  View: nsys-ui $OUTPUT_DIR/*_nsys_*.nsys-rep"
-[[ "$PROFILER" == "ncu" ]] || [[ "$PROFILER" == "both" ]] && \
-    echo -e "  View: ncu-ui $OUTPUT_DIR/*_ncu_*.ncu-rep"
-echo ""
+# Run
+run_profiling_batch
