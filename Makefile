@@ -13,7 +13,7 @@ CUDA_ARCH   ?= 75
 JOBS ?= $(shell nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)
 
 # Deployment Settings
-NODES       ?= localhost 10.0.0.2
+NODES       ?= localhost 10.0.0.2 10.0.1.2
 REMOTE_USER ?= $(USER)
 REMOTE_DIR  ?= /home/shared/tmp/distributed-snp-new
 HOSTFILE    ?= hostfile.txt
@@ -111,7 +111,7 @@ profile: distribute ## Profile implementations
 	@./scripts/run_profiling.sh $(ARGS)
 
 run-distributed:
-	@mpirun -np 2 --host localhost,10.0.0.2 --mca btl_tcp_if_include ens5 --mca oob_tcp_if_include ens5 $(ARGS)
+	@mpirun -np 3 --host localhost,10.0.0.2,10.0.1.2 --mca btl_tcp_if_include ens5 --mca oob_tcp_if_include ens5 $(ARGS)
 
 microbenchmark: distribute ## Run microbenchmark tool (use: make microbenchmark -- -n 1000 -i cuda)
 	$(MAKE) run-distributed ARGS="$(REMOTE_DIR)/bin/microbenchmark $(ARGS)"

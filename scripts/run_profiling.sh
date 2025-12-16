@@ -103,7 +103,7 @@ extract_nsys_stats() {
     
     for rep_file in $rep_files; do
         local base="${rep_file%.nsys-rep}"
-        nsys stats --report cuda_api_sum,cuda_gpu_kern_sum,cuda_gpu_mem_time_sum,mpi_sum,nvtx_sum \
+        nsys stats --report cuda_api_sum,cuda_gpu_kern_sum,cuda_gpu_mem_size_sum,cuda_gpu_mem_time_sum,cuda_gpu_sum,cuda_kern_exec_sum,cuda_api_gpu_sum,mpi_event_sum,mpi_msg_size_sum \
             --format csv --quiet --output "${base}_stats" "$rep_file" 2>/dev/null || true
     done
     
@@ -148,11 +148,11 @@ run_mpi_profiler() {
     
     # Execute with or without MPI
     if [ "$is_mpi" = true ]; then
-        for node in "localhost" "10.0.0.2"; do
+        for node in "localhost" "10.0.0.2" "10.0.1.2"; do
             ssh shared@"$node" "mkdir -p $output_dir"  2>&1 || true
         done
         # Suppress MPI error messages when process exits during cleanup
-        local mpi_cmd="mpirun -np 2 --host localhost,10.0.0.2 \
+        local mpi_cmd="mpirun -np 3 --host localhost,10.0.0.2,10.0.1.2 \
             --mca btl_tcp_if_include ens5 --mca oob_tcp_if_include ens5 \
             --mca orte_abort_on_non_zero_status 0"
         eval "$mpi_cmd $profiler_cmd $app_cmd" 2>&1 | grep -v "^Collecting\|^==\|Primary job\|mpirun detected" || true

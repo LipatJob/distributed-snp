@@ -14,12 +14,12 @@ OUTPUT_DIR="${PROJECT_ROOT}/benchmark/results"
 HOSTFILE="${PROJECT_ROOT}/hostfile.txt"
 BUILD_DIR="/home/shared/tmp/distributed-snp-new"
 BENCHMARK_EXEC="${BUILD_DIR}/bin/sort_benchmark"
-HOSTS="localhost,10.0.0.2"
+HOSTS="localhost,10.0.0.2,10.0.1.2"
 
 mkdir -p "$OUTPUT_DIR"
 
 # Default options
-NUM_PROCS=2
+NUM_PROCS=3
 OUTPUT_FORMAT="console"
 FILTER=""
 BENCHMARK_ARGS=""

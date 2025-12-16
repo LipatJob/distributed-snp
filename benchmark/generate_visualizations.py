@@ -413,6 +413,15 @@ def compute_breakdown_stacked_bars(df, viz_dir):
         
         print(f"  ✓ Breakdowns (Absolute & Normalized) ({pattern})")
 
+
+def generate_all_visualizations(df, viz_dir):
+    """Generate all visualizations."""
+    throughput_vs_size_lines(df, viz_dir)
+    speedup_vs_size_bars(df, viz_dir)
+    communication_percentage_lines(df, viz_dir)
+    performance_profile_plot(df, viz_dir)
+    compute_breakdown_stacked_bars(df, viz_dir)
+
 def main():
     if len(sys.argv) < 2:
         print("Usage: python viz_snp.py <path_to_data.json>")
@@ -430,11 +439,7 @@ def main():
     df = load_benchmark_data(json_path)
     
     print("Generating insightful visualizations...")
-    throughput_vs_size_lines(df, viz_dir)
-    speedup_vs_size_bars(df, viz_dir)
-    communication_percentage_lines(df, viz_dir)
-    performance_profile_plot(df, viz_dir)
-    compute_breakdown_stacked_bars(df, viz_dir)
+    generate_all_visualizations(df, viz_dir)
     
     print(f"\n✓ Insights ready! Check folder: {viz_dir}")
 
