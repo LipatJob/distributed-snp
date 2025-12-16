@@ -170,7 +170,7 @@ run_profiling_for_impl() {
     local partitioner="$2"
     
     echo ""
-    log_step "Profiling: $impl"
+    log_step "Profiling: $impl $( [ -n "$partitioner" ] && echo "with $partitioner partitioner" )"
     
     case $PROFILER in
         nsys)
@@ -199,7 +199,7 @@ run_profiling_batch() {
     echo -e "${BLUE}══════════════════════════════════════════════════════${NC}"
     echo "  Implementations:"
     for i in "${!IMPLEMENTATIONS[@]}"; do
-        echo "    - ${IMPLEMENTATIONS[$i]} (${PARTITIONERS[$i]})"
+        echo "    - ${IMPLEMENTATIONS[$i]} $( [ -n "${PARTITIONERS[$i]}" ] && echo "with ${PARTITIONERS[$i]} partitioner" )"
     done
     echo "  Profiler: $PROFILER"
     echo "  Steps: ${STEPS:-max}"
@@ -236,7 +236,7 @@ while [[ $# -gt 0 ]]; do
                 else
                     # No partitioner specified, use default (ignored for non-MPI)
                     IMPLEMENTATIONS+=("$item")
-                    PARTITIONERS+=("linear")
+                    PARTITIONERS+=("")
                 fi
             done
             shift 2 

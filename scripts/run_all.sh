@@ -60,7 +60,7 @@ implementations=(
     "optimized-cuda"
     "sparse-cuda"
 )
-make profile ARGS="-p ncu -i $(IFS=,; echo "${implementations[*]}")" && sleep 1
+make profile ARGS="-s 3 -p ncu -i $(IFS=,; echo "${implementations[*]}")" && sleep 1
 log_success "Nsight Compute profiling complete"
 
 echo ""
