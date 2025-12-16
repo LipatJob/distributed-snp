@@ -61,6 +61,9 @@ LABELS = {
     'OptimizedCudaMpiSnp_RedBlue': 'Opt MPI (RedBlue)'
 }
 
+# Create a global palette mapping Labels -> Colors
+GLOBAL_PALETTE = {LABELS.get(k, k): v for k, v in IMPL_COLORS.items()}
+
 def load_benchmark_data(json_path):
     """Load, parse, and clean benchmark JSON file."""
     with open(json_path, 'r') as f:
@@ -111,7 +114,7 @@ def throughput_vs_size_lines(df, viz_dir):
         
         sns.lineplot(data=pattern_df, x='Size', y='Throughput_steps/s', hue='Label',
                      style='Label', markers=True, dashes=False, 
-                     palette=[IMPL_COLORS.get(i, '#333') for i in sorted(pattern_df['Implementation'].unique())],
+                     palette=GLOBAL_PALETTE,
                      linewidth=2.5, markersize=8, ax=ax)
         
         ax.set_xlabel('System Size (Neurons)', fontweight='bold')
@@ -169,11 +172,8 @@ def speedup_vs_size_bars(df, viz_dir):
         plot_df = pd.DataFrame(plot_data)
         fig, ax = plt.subplots(figsize=(12, 6))
         
-        unique_labels = plot_df['Original_Impl'].unique()
-        palette = {LABELS.get(i, i): IMPL_COLORS.get(i, '#333') for i in unique_labels}
-        
         sns.barplot(data=plot_df, x='Size', y='Speedup', hue='Label',
-                    palette=palette, ax=ax, edgecolor='black', linewidth=0.5)
+                    palette=GLOBAL_PALETTE, ax=ax, edgecolor='black', linewidth=0.5)
         
         ax.set_xlabel('System Size', fontweight='bold')
         ax.set_ylabel('Speedup vs CPU (Log Scale)', fontweight='bold')
@@ -222,15 +222,13 @@ def communication_percentage_lines(df, viz_dir):
         if not plot_data: continue
             
         plot_df = pd.DataFrame(plot_data)
-        unique_orgs = plot_df['Original_Impl'].unique()
-        palette = {LABELS.get(i, i): IMPL_COLORS.get(i, '#333') for i in unique_orgs}
 
         # --- VIEW 1: LINEAR (Zoomed in) ---
         fig, ax = plt.subplots(figsize=(10, 6))
         
         sns.lineplot(data=plot_df, x='Size', y='Percentage', hue='Label',
                      style='Label', markers=True, dashes=False,
-                     palette=palette, linewidth=2.5, markersize=9, ax=ax)
+                     palette=GLOBAL_PALETTE, linewidth=2.5, markersize=9, ax=ax)
         
         ax.set_xlabel('System Size (Neurons)', fontweight='bold')
         ax.set_ylabel('Comm. Overhead (%)', fontweight='bold')
@@ -254,7 +252,7 @@ def communication_percentage_lines(df, viz_dir):
         
         sns.lineplot(data=plot_df, x='Size', y='Percentage', hue='Label',
                      style='Label', markers=True, dashes=False,
-                     palette=palette, linewidth=2.5, markersize=9, ax=ax)
+                     palette=GLOBAL_PALETTE, linewidth=2.5, markersize=9, ax=ax)
         
         ax.set_xlabel('System Size (Neurons)', fontweight='bold')
         ax.set_ylabel('Comm. Overhead (% - Log Scale)', fontweight='bold')
@@ -310,10 +308,8 @@ def performance_profile_plot(df, viz_dir):
     plot_df = pd.DataFrame(plot_data)
     fig, ax = plt.subplots(figsize=(10, 6))
     
-    palette = {LABELS.get(i, i): IMPL_COLORS.get(i, '#333') for i in plot_df['Original_Impl'].unique()}
-    
     sns.lineplot(data=plot_df, x='Tau', y='Probability', hue='Label',
-                 palette=palette, linewidth=2, ax=ax)
+                 palette=GLOBAL_PALETTE, linewidth=2, ax=ax)
         
     ax.set_xlabel('Performance Ratio (τ)', fontweight='bold')
     ax.set_ylabel('Probability (Within τ of Best)', fontweight='bold')

@@ -274,7 +274,20 @@ namespace Suites {
         {"Large_RevSort", largeSize, largeSize, Distribution::REVERSE_SORTED, 4},
         {"Large_Rand", largeSize, largeSize, Distribution::RANDOM, 4},
     };
-    
+
+    // Scaling Suite: Powers of two from 2 to 2048
+    const std::vector<TestConfig> Scaling = []
+    {
+        std::vector<TestConfig> c;
+        for (int s : {2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048})
+        {
+            c.push_back(TestConfig{"Scaling_Sort", (size_t)s, s, Distribution::SORTED, 20});
+            c.push_back(TestConfig{"Scaling_RevSort", (size_t)s, s, Distribution::REVERSE_SORTED, 20});
+            c.push_back(TestConfig{"Scaling_Rand", (size_t)s, s, Distribution::RANDOM, 20});
+        }
+        return c;
+    }();
+
     // Combine vectors helper
     std::vector<TestConfig> All() {
         std::vector<TestConfig> all = Small;
@@ -297,39 +310,29 @@ int main(int argc, char** argv) {
     // This is where you select which simulators run "by default" or add new ones.
     
     // 1. CPU
-    RegisterSimulator("CpuSnp", createNaiveCpuSnpSort, Suites::Small);
+    RegisterSimulator("CpuSnp", createNaiveCpuSnpSort, Suites::Scaling);
 
     // 2. Sparse CUDA
-    RegisterSimulator("SparseCudaSnp", createSparseCudaSnpSort, Suites::Small);
-    RegisterSimulator("SparseCudaSnp", createSparseCudaSnpSort, Suites::Medium);
+    RegisterSimulator("SparseCudaSnp", createSparseCudaSnpSort, Suites::Scaling);
 
     // 3. CUDA
-    RegisterSimulator("OptimizedCudaSnp", createOptimizedCudaSnpSort, Suites::Small);
-    RegisterSimulator("OptimizedCudaSnp", createOptimizedCudaSnpSort, Suites::Medium);
+    RegisterSimulator("OptimizedCudaSnp", createOptimizedCudaSnpSort, Suites::Scaling);
 
     // 4. Naive CUDA/MPI
     RegisterSimulator("NaiveCudaMpiSnp", []()
-                      { return createNaiveCudaMpiSnpSort(); }, Suites::Small);
-    RegisterSimulator("NaiveCudaMpiSnp", []()
-                      { return createNaiveCudaMpiSnpSort(); }, Suites::Medium);
+                      { return createNaiveCudaMpiSnpSort(); }, Suites::Scaling);
 
     // 5. CUDA/MPI (Linear - Default)
     RegisterSimulator("OptimizedCudaMpiSnp_Linear", []()
-                      { return createOptimizedCudaMpiSnpSort(PartitionerType::LINEAR); }, Suites::Small);
-    RegisterSimulator("OptimizedCudaMpiSnp_Linear", []()
-                      { return createOptimizedCudaMpiSnpSort(PartitionerType::LINEAR); }, Suites::Medium);
+                      { return createOptimizedCudaMpiSnpSort(PartitionerType::LINEAR); }, Suites::Scaling);
 
     // 5b. CUDA/MPI (Louvain)
     RegisterSimulator("OptimizedCudaMpiSnp_Louvain", []()
-                      { return createOptimizedCudaMpiSnpSort(PartitionerType::LOUVAIN); }, Suites::Small);
-    RegisterSimulator("OptimizedCudaMpiSnp_Louvain", []()
-                      { return createOptimizedCudaMpiSnpSort(PartitionerType::LOUVAIN); }, Suites::Medium);
+                      { return createOptimizedCudaMpiSnpSort(PartitionerType::LOUVAIN); }, Suites::Scaling);
 
     // 5c. CUDA/MPI (Red-Blue)
     RegisterSimulator("OptimizedCudaMpiSnp_RedBlue", []()
-                      { return createOptimizedCudaMpiSnpSort(PartitionerType::RED_BLUE_BFS); }, Suites::Small);
-    RegisterSimulator("OptimizedCudaMpiSnp_RedBlue", []()
-                      { return createOptimizedCudaMpiSnpSort(PartitionerType::RED_BLUE_BFS); }, Suites::Medium);
+                      { return createOptimizedCudaMpiSnpSort(PartitionerType::RED_BLUE_BFS); }, Suites::Scaling);
 
     // --- EXECUTION PHASE ---
     // Only rank 0 initializes benchmark with args to handle output file writing
