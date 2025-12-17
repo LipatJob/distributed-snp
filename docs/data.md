@@ -1,0 +1,41 @@
+# Benchmark Results
+
+## 1. Naive vs Optimized (2 Nodes)
+Comparison of Naive and Optimized implementations on 2 nodes for smaller datasets. All runs performed for 20 steps.
+
+| Neurons | Implementation | Total Time (s) | Compute Time (ms) | Comm Time (ms) | Speedup (Total) |
+|---------|----------------|----------------|-------------------|----------------|-----------------|
+| 2M      | Naive          | 0.9834         | 184.28            | 801.29         | 1.00x           |
+| 2M      | Optimized      | 0.4748         | 127.84            | 331.60         | 2.07x           |
+| 4M      | Naive          | 2.0648         | 672.92            | 1393.28        | 1.00x           |
+| 4M      | Optimized      | 1.4426         | 509.03            | 910.51         | 1.43x           |
+| 6M      | Naive          | 2.9001         | 1130.90           | 1797.84        | 1.00x           |
+| 6M      | Optimized      | 2.5264         | 895.02            | 1599.44        | 1.15x           |
+
+## 2. Optimized Scalability (2 Nodes)
+Performance of the Optimized implementation on 2 nodes for larger datasets. All runs performed for 20 steps.
+
+| Neurons | Total Time (s) | Compute Time (ms) | Comm Time (ms) |
+|---------|----------------|-------------------|----------------|
+| 8M      | 2.9722         | 1224.16           | 1707.53        |
+| 10M     | 3.7883         | 1624.73           | 2120.21        |
+| 12M     | 4.4327         | 1970.87           | 2392.21        |
+| 14M     | 4.9546         | 2328.58           | 2538.59        |
+| 16M     | 5.2730         | 2734.13           | 2439.53        |
+| 18M     | 6.2748         | 3081.94           | 3085.16        |
+| 20M     | 6.5826         | 3481.36           | 2960.80        |
+
+*Note: 22M failed.*
+
+## 3. Single Node Baseline (Optimized)
+Performance of the Optimized implementation on a single node.
+
+| Neurons | Steps | Total Time (s) | Compute Time (ms) | Comm Time (ms) |
+|---------|-------|----------------|-------------------|----------------|
+| 2M      | 5     | 0.1128         | 112.80            | ~0             |
+| 4M      | 5     | 0.2736         | 273.64            | ~0             |
+| 6M      | 20    | 1.8010         | 1800.94           | ~0             |
+| 8M      | 5     | 0.6316         | 631.59            | ~0             |
+| 10M     | 20    | 3.1940         | 3193.97           | ~0             |
+
+*Note: Failed at 12M.*

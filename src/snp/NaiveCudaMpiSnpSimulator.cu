@@ -6,6 +6,7 @@
 #include "LinearPartitioner.hpp"
 #include "LouvainPartitioner.hpp"
 #include "RedBluePartitioner.hpp"
+#include "../../bigdata/BigDataCommon.hpp"
 #include <mpi.h>
 #include <cuda_runtime.h>
 #include <vector>
@@ -15,6 +16,9 @@
 #include <sstream>
 #include <chrono>
 #include <memory>
+#include <fstream>
+#include <map>
+#include <tuple>
 
 // --- Macros & Constants ---
 
@@ -314,6 +318,294 @@ public:
         if (global_num_neurons > 0) cudaFree(d_global_production);
     }
 
+    bool loadPresplitSystem(const std::string& partition_file) override {
+        std::ifstream in(partition_file, std::ios::binary);
+        if (!in) {
+            std::cerr << "Rank " << mpi_rank << ": Failed to open " << partition_file << std::endl;
+            return false;
+        }
+
+        bigdata::PartitionHeader header;
+        in.read(reinterpret_cast<char*>(&header), sizeof(header));
+        if (header.magic != bigdata::PARTITION_MAGIC) {
+            std::cerr << "Rank " << mpi_rank << ": Invalid magic number" << std::endl;
+            return false;
+        }
+
+        my_neuron_count = header.num_local_neurons;
+
+        // 1. Exchange counts to build global map
+        std::vector<int> rank_counts(mpi_size);
+        MPI_Allgather(&my_neuron_count, 1, MPI_INT, rank_counts.data(), 1, MPI_INT, MPI_COMM_WORLD);
+
+        mpi_recv_counts = rank_counts;
+        mpi_displs.resize(mpi_size);
+        mpi_displs[0] = 0;
+        for (int i = 1; i < mpi_size; ++i) {
+            mpi_displs[i] = mpi_displs[i-1] + mpi_recv_counts[i-1];
+        }
+        global_num_neurons = mpi_displs.back() + mpi_recv_counts.back();
+        my_start_id = mpi_displs[mpi_rank];
+        my_end_id = my_start_id + my_neuron_count;
+
+        // 2. Allocate Device Memory
+        d_local_neurons.allocate(my_neuron_count);
+        if (my_neuron_count > 0) {
+            CUDA_CHECK(cudaMalloc(&d_local_production, my_neuron_count * sizeof(int)));
+        }
+        if (global_num_neurons > 0) {
+            CUDA_CHECK(cudaMalloc(&d_global_production, global_num_neurons * sizeof(int)));
+        }
+        // Host buffers
+        h_local_production.resize(my_neuron_count);
+        h_global_production.resize(global_num_neurons);
+
+        // 3. Read Neurons & Rules
+        std::vector<int> h_config(my_neuron_count);
+        std::vector<int> h_rule_start(my_neuron_count);
+        std::vector<int> h_rule_count(my_neuron_count);
+        
+        // Temp storage for rules (flattened)
+        std::vector<int> r_thresh, r_cons, r_prod, r_delay;
+        
+        int current_rule_idx = 0;
+        for (int i = 0; i < my_neuron_count; ++i) {
+            int32_t id, init_spikes, num_rules;
+            in.read(reinterpret_cast<char*>(&id), sizeof(id));
+            in.read(reinterpret_cast<char*>(&init_spikes), sizeof(init_spikes));
+            in.read(reinterpret_cast<char*>(&num_rules), sizeof(num_rules));
+            
+            h_config[i] = init_spikes;
+            h_rule_start[i] = current_rule_idx;
+            h_rule_count[i] = num_rules;
+
+            for (int k = 0; k < num_rules; ++k) {
+                bigdata::RuleData rd;
+                in.read(reinterpret_cast<char*>(&rd), sizeof(rd));
+                r_thresh.push_back(rd.input_threshold);
+                r_cons.push_back(rd.spikes_consumed);
+                r_prod.push_back(rd.spikes_produced);
+                r_delay.push_back(rd.delay);
+                current_rule_idx++;
+            }
+        }
+
+        // Upload Neurons
+        if (my_neuron_count > 0) {
+            std::vector<int> zeros(my_neuron_count, 0);
+            std::vector<char> open(my_neuron_count, true);
+            CUDA_CHECK(cudaMemcpy(d_local_neurons.current_spikes, h_config.data(), my_neuron_count * sizeof(int), cudaMemcpyHostToDevice));
+            CUDA_CHECK(cudaMemcpy(d_local_neurons.initial_spikes, h_config.data(), my_neuron_count * sizeof(int), cudaMemcpyHostToDevice));
+            CUDA_CHECK(cudaMemcpy(d_local_neurons.is_open, open.data(), my_neuron_count * sizeof(char), cudaMemcpyHostToDevice)); // bool/char size match?
+            CUDA_CHECK(cudaMemcpy(d_local_neurons.delay_timer, zeros.data(), my_neuron_count * sizeof(int), cudaMemcpyHostToDevice));
+            CUDA_CHECK(cudaMemcpy(d_local_neurons.pending_emission, zeros.data(), my_neuron_count * sizeof(int), cudaMemcpyHostToDevice));
+        }
+
+        // Upload Rules
+        d_local_rules.allocate(my_neuron_count, current_rule_idx);
+        CUDA_CHECK(cudaMemcpy(d_local_rules.rule_start_idx, h_rule_start.data(), my_neuron_count * sizeof(int), cudaMemcpyHostToDevice));
+        CUDA_CHECK(cudaMemcpy(d_local_rules.rule_count, h_rule_count.data(), my_neuron_count * sizeof(int), cudaMemcpyHostToDevice));
+        if (current_rule_idx > 0) {
+            CUDA_CHECK(cudaMemcpy(d_local_rules.threshold, r_thresh.data(), current_rule_idx * sizeof(int), cudaMemcpyHostToDevice));
+            CUDA_CHECK(cudaMemcpy(d_local_rules.consumed, r_cons.data(), current_rule_idx * sizeof(int), cudaMemcpyHostToDevice));
+            CUDA_CHECK(cudaMemcpy(d_local_rules.produced, r_prod.data(), current_rule_idx * sizeof(int), cudaMemcpyHostToDevice));
+            CUDA_CHECK(cudaMemcpy(d_local_rules.delay, r_delay.data(), current_rule_idx * sizeof(int), cudaMemcpyHostToDevice));
+        }
+
+        // 4. Read Synapses & Prepare for Global Exchange
+        // We need to reconstruct the GLOBAL synapse list.
+        // Strategy: Gather ALL Local, Export, and Import definitions from ALL ranks.
+        
+        std::vector<int> local_syn_buf; // [src_global, dst_global, weight, ...]
+        std::vector<int> export_syn_buf; // [src_global, target_rank, export_idx, weight, ...]
+        std::vector<int> import_syn_buf; // [source_rank, export_idx, dst_global, ...]
+
+        // Read Local Synapses
+        for (uint64_t i = 0; i < header.num_local_synapses; ++i) {
+            bigdata::LocalSynapseData sd;
+            in.read(reinterpret_cast<char*>(&sd), sizeof(sd));
+            local_syn_buf.push_back(my_start_id + sd.source_local_idx);
+            local_syn_buf.push_back(my_start_id + sd.dest_local_idx);
+            local_syn_buf.push_back(sd.weight);
+        }
+
+        // Read Export Groups
+        for (uint64_t i = 0; i < header.num_export_groups; ++i) {
+            bigdata::ExportGroupHeader gh;
+            in.read(reinterpret_cast<char*>(&gh), sizeof(gh));
+            for (uint64_t k = 0; k < gh.num_synapses; ++k) {
+                bigdata::ExportSynapseData sd;
+                in.read(reinterpret_cast<char*>(&sd), sizeof(sd));
+                export_syn_buf.push_back(my_start_id + sd.source_local_idx);
+                export_syn_buf.push_back(gh.target_rank);
+                export_syn_buf.push_back(k); // export_idx
+                export_syn_buf.push_back(sd.weight);
+            }
+        }
+
+        // Read Import Groups
+        for (uint64_t i = 0; i < header.num_import_groups; ++i) {
+            bigdata::ImportGroupHeader gh;
+            in.read(reinterpret_cast<char*>(&gh), sizeof(gh));
+            for (uint64_t k = 0; k < gh.num_synapses; ++k) {
+                bigdata::ImportSynapseData sd;
+                in.read(reinterpret_cast<char*>(&sd), sizeof(sd));
+                import_syn_buf.push_back(gh.source_rank);
+                import_syn_buf.push_back(sd.export_index);
+                import_syn_buf.push_back(my_start_id + sd.dest_local_idx);
+            }
+        }
+
+        // 5. Global Exchange (Allgatherv)
+        auto gather_vector = [&](const std::vector<int>& local_vec) {
+            int local_size = local_vec.size();
+            std::vector<int> sizes(mpi_size);
+            MPI_Allgather(&local_size, 1, MPI_INT, sizes.data(), 1, MPI_INT, MPI_COMM_WORLD);
+            
+            std::vector<int> displs(mpi_size);
+            displs[0] = 0;
+            for(int i=1; i<mpi_size; i++) displs[i] = displs[i-1] + sizes[i-1];
+            
+            int total_size = displs.back() + sizes.back();
+            std::vector<int> global_vec(total_size);
+            
+            MPI_Allgatherv(local_vec.data(), local_size, MPI_INT, 
+                           global_vec.data(), sizes.data(), displs.data(), MPI_INT, MPI_COMM_WORLD);
+            return global_vec;
+        };
+
+        std::vector<int> all_local_syns = gather_vector(local_syn_buf);
+        std::vector<int> all_export_syns = gather_vector(export_syn_buf);
+        std::vector<int> all_import_syns = gather_vector(import_syn_buf);
+
+        // 6. Reconstruct Global Synapse List
+        std::vector<int> final_src, final_dst, final_w;
+
+        // Add Local Synapses
+        for (size_t i = 0; i < all_local_syns.size(); i += 3) {
+            final_src.push_back(all_local_syns[i]);
+            final_dst.push_back(all_local_syns[i+1]);
+            final_w.push_back(all_local_syns[i+2]);
+        }
+
+        // Map Imports: (SourceRank, TargetRank, ExportIdx) -> GlobalDst
+        // Note: Import data is [SourceRank, ExportIdx, GlobalDst]
+        // But we need to know WHICH rank provided this import data to know TargetRank.
+        // We can infer TargetRank from the displs/sizes used in gather_vector, OR we can just include TargetRank in the buffer.
+        // Let's re-do the gather logic slightly to include "MyRank" in the buffer? 
+        // Or just iterate using the sizes/displs.
+        
+        // Re-calculate sizes/displs for imports
+        {
+            int local_size = import_syn_buf.size();
+            std::vector<int> sizes(mpi_size);
+            MPI_Allgather(&local_size, 1, MPI_INT, sizes.data(), 1, MPI_INT, MPI_COMM_WORLD);
+            std::vector<int> displs(mpi_size);
+            displs[0] = 0;
+            for(int i=1; i<mpi_size; i++) displs[i] = displs[i-1] + sizes[i-1];
+
+            // Map: Key = {SourceRank, TargetRank, ExportIdx} -> Value = GlobalDst
+            std::map<std::tuple<int, int, int>, int> import_map;
+
+            for (int r = 0; r < mpi_size; ++r) {
+                int start = displs[r];
+                int count = sizes[r];
+                for (int k = 0; k < count; k += 3) {
+                    int src_rank = all_import_syns[start + k];
+                    int exp_idx = all_import_syns[start + k + 1];
+                    int dst_global = all_import_syns[start + k + 2];
+                    int tgt_rank = r; // The rank that provided this data
+                    import_map[{src_rank, tgt_rank, exp_idx}] = dst_global;
+                }
+            }
+
+            // Match Exports
+            // Export data: [src_global, target_rank, export_idx, weight]
+            // We don't need to know who sent the export data, just the content.
+            for (size_t i = 0; i < all_export_syns.size(); i += 4) {
+                int src_global = all_export_syns[i];
+                int tgt_rank = all_export_syns[i+1];
+                int exp_idx = all_export_syns[i+2];
+                int weight = all_export_syns[i+3];
+                
+                // Find Source Rank? No, we need Source Rank to look up in import_map.
+                // The Export data doesn't explicitly say "I am from Rank X".
+                // But we need it for the key {SourceRank, TargetRank, ExportIdx}.
+                // So we DO need to iterate by rank for exports too.
+            }
+        }
+        
+        // Correct approach: Iterate by rank for Exports too.
+        {
+             // Recalculate sizes/displs for imports (needed for map construction)
+            int local_imp_size = import_syn_buf.size();
+            std::vector<int> imp_sizes(mpi_size);
+            MPI_Allgather(&local_imp_size, 1, MPI_INT, imp_sizes.data(), 1, MPI_INT, MPI_COMM_WORLD);
+            std::vector<int> imp_displs(mpi_size);
+            imp_displs[0] = 0;
+            for(int i=1; i<mpi_size; i++) imp_displs[i] = imp_displs[i-1] + imp_sizes[i-1];
+
+            std::map<std::tuple<int, int, int>, int> import_map;
+            for (int r = 0; r < mpi_size; ++r) {
+                int start = imp_displs[r];
+                int count = imp_sizes[r];
+                for (int k = 0; k < count; k += 3) {
+                    int src_rank = all_import_syns[start + k];
+                    int exp_idx = all_import_syns[start + k + 1];
+                    int dst_global = all_import_syns[start + k + 2];
+                    import_map[{src_rank, r, exp_idx}] = dst_global;
+                }
+            }
+
+            // Recalculate sizes/displs for exports
+            int local_exp_size = export_syn_buf.size();
+            std::vector<int> exp_sizes(mpi_size);
+            MPI_Allgather(&local_exp_size, 1, MPI_INT, exp_sizes.data(), 1, MPI_INT, MPI_COMM_WORLD);
+            std::vector<int> exp_displs(mpi_size);
+            exp_displs[0] = 0;
+            for(int i=1; i<mpi_size; i++) exp_displs[i] = exp_displs[i-1] + exp_sizes[i-1];
+
+            for (int r = 0; r < mpi_size; ++r) {
+                int start = exp_displs[r];
+                int count = exp_sizes[r];
+                for (int k = 0; k < count; k += 4) {
+                    int src_global = all_export_syns[start + k];
+                    int tgt_rank = all_export_syns[start + k + 1];
+                    int exp_idx = all_export_syns[start + k + 2];
+                    int weight = all_export_syns[start + k + 3];
+                    
+                    // Lookup Dst
+                    if (import_map.count({r, tgt_rank, exp_idx})) {
+                        int dst_global = import_map[{r, tgt_rank, exp_idx}];
+                        final_src.push_back(src_global);
+                        final_dst.push_back(dst_global);
+                        final_w.push_back(weight);
+                    } else {
+                        // Should not happen if data is consistent
+                        if (mpi_rank == 0) std::cerr << "Warning: Unmatched export from Rank " << r << " to " << tgt_rank << " idx " << exp_idx << std::endl;
+                    }
+                }
+            }
+        }
+
+        // 7. Upload Synapses
+        size_t n_syn = final_src.size();
+        
+        if (mpi_rank == 0) {
+             std::cout << "Rank " << mpi_rank << ": Loaded " << my_neuron_count << " neurons, " 
+                  << current_rule_idx << " rules, " << n_syn << " synapses." << std::endl;
+        }
+
+        d_synapses.allocate(n_syn);
+        if (n_syn > 0) {
+            CUDA_CHECK(cudaMemcpy(d_synapses.source_global_id, final_src.data(), n_syn * sizeof(int), cudaMemcpyHostToDevice));
+            CUDA_CHECK(cudaMemcpy(d_synapses.dest_global_id, final_dst.data(), n_syn * sizeof(int), cudaMemcpyHostToDevice));
+            CUDA_CHECK(cudaMemcpy(d_synapses.weight, final_w.data(), n_syn * sizeof(int), cudaMemcpyHostToDevice));
+        }
+
+        return true;
+    }
+
     bool loadSystem(const SnpSystemConfig& original_config) override {
         // 1. Partition & Permute
         if (!partitioner) {
@@ -503,6 +795,7 @@ public:
         metrics.steps_executed = steps_executed;
         metrics.total_time_ms = total_time_ms;
         metrics.compute_time_ms = compute_time_ms;
+        metrics.cuda.kernel_time_ms = compute_time_ms; // Populate kernel time for reporting
         
         // MPI metrics
         metrics.mpi.communication_time_ms = mpi_time_ms;
@@ -512,6 +805,18 @@ public:
         // Algorithm metrics
         metrics.algorithm.num_neurons = global_num_neurons;
         metrics.algorithm.local_neurons = my_neuron_count;
+        metrics.algorithm.total_rules = d_local_rules.total_rules_count;
+        // For Naive, we replicate all synapses. 
+        // To avoid double counting in global sum, we only report synapses on Rank 0.
+        // Or we report 0 and let the user know Naive doesn't partition synapses.
+        // However, BigDataRun.cpp sums them up.
+        // Let's report the total count on Rank 0, and 0 on others.
+        if (mpi_rank == 0) {
+            metrics.algorithm.num_synapses = d_synapses.count;
+        } else {
+            metrics.algorithm.num_synapses = 0;
+        }
+        metrics.algorithm.local_synapses = 0; // Naive doesn't have "local" synapses concept really
         metrics.algorithm.partitioner_type = "Naive CUDA+MPI";
         
         return metrics;

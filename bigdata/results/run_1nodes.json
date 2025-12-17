@@ -1,0 +1,14 @@
+{
+  "nodes": 1,
+  "steps": 5,
+  "global_neurons": 10000000,
+  "global_rules": 10000000,
+  "global_synapses": 100001729,
+  "local_neurons": 10000000,
+  "local_rules": 10000000,
+  "local_synapses": 100001729,
+  "total_time_s": 0.793147,
+  "max_comm_time_ms": 0.000422,
+  "max_compute_time_ms": 793.142,
+  "state_checksum": 2635121783
+}

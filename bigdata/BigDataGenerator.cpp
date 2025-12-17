@@ -20,7 +20,8 @@ struct Config {
     double avg_inter_degree = 1.0;
     std::string out_dir = "output/bigdata";
     uint64_t seed = 123;
-    double mem_limit_gb = 0.0; // 0 means no check
+    double min_mem_gb = 0.0; // 0 means no check
+    double max_mem_gb = 0.0; // 0 means no check
     int target_rank = -1; // -1 means generate all
 };
 
@@ -33,7 +34,8 @@ void print_usage(const char* prog) {
               << "  --inter D             Average inter-node degree (default: 1.0)\n"
               << "  -o, --outdir DIR      Output directory (default: output/bigdata)\n"
               << "  -s, --seed S          Random seed (default: 123)\n"
-              << "  --mem-limit GB        Memory limit check in GB (default: 0/off)\n"
+              << "  --min-mem GB          Minimum global dataset size check (default: 0/off)\n"
+              << "  --max-mem GB          Maximum partition size safety check (default: 0/off)\n"
               << "  --rank R              Only generate partition for rank R (default: all)\n"
               << "  -h, --help            Show this help\n";
 }
@@ -48,7 +50,9 @@ Config parse_args(int argc, char** argv) {
         else if (arg == "--inter") c.avg_inter_degree = std::stod(argv[++i]);
         else if (arg == "-o" || arg == "--outdir") c.out_dir = argv[++i];
         else if (arg == "-s" || arg == "--seed") c.seed = std::stoull(argv[++i]);
-        else if (arg == "--mem-limit") c.mem_limit_gb = std::stod(argv[++i]);
+        else if (arg == "--min-mem") c.min_mem_gb = std::stod(argv[++i]);
+        else if (arg == "--max-mem") c.max_mem_gb = std::stod(argv[++i]);
+        else if (arg == "--mem-limit") c.min_mem_gb = std::stod(argv[++i]); // Backwards compatibility
         else if (arg == "--rank") c.target_rank = std::stoi(argv[++i]);
         else if (arg == "-h" || arg == "--help") { print_usage(argv[0]); exit(0); }
     }
@@ -77,16 +81,27 @@ int main(int argc, char** argv) {
     double estimated_size_bytes = config.total_neurons * 100.0 + 
                                   config.total_neurons * (config.avg_intra_degree + config.avg_inter_degree) * 12.0;
     double estimated_size_gb = estimated_size_bytes / (1024.0 * 1024.0 * 1024.0);
+    double partition_size_gb = estimated_size_gb / config.num_ranks;
 
-    std::cout << "Estimated Dataset Size: " << estimated_size_gb << " GB" << std::endl;
+    std::cout << "Estimated Global Dataset Size: " << estimated_size_gb << " GB" << std::endl;
+    std::cout << "Estimated Partition Size (per node): " << partition_size_gb << " GB" << std::endl;
 
-    if (config.mem_limit_gb > 0) {
-        if (estimated_size_gb < config.mem_limit_gb) {
+    if (config.min_mem_gb > 0) {
+        if (estimated_size_gb < config.min_mem_gb) {
             std::cerr << "Error: Dataset too small! Estimated " << estimated_size_gb 
-                      << " GB < Limit " << config.mem_limit_gb << " GB" << std::endl;
+                      << " GB < Limit " << config.min_mem_gb << " GB" << std::endl;
             return 1;
         } else {
-            std::cout << "Memory check passed: Dataset is larger than " << config.mem_limit_gb << " GB" << std::endl;
+            std::cout << "Min Memory check passed: Dataset is larger than " << config.min_mem_gb << " GB" << std::endl;
+        }
+    }
+
+    if (config.max_mem_gb > 0) {
+        if (partition_size_gb > config.max_mem_gb) {
+            std::cerr << "Error: Partition size (" << partition_size_gb << " GB) exceeds safety limit (" << config.max_mem_gb << " GB)!" << std::endl;
+            return 1;
+        } else {
+            std::cout << "Max Memory check passed: Partition is smaller than " << config.max_mem_gb << " GB" << std::endl;
         }
     }
 

@@ -1,0 +1,115 @@
+[0;34mRunning Capacity Stress Test...[0m
+================================================================
+Capacity Stress Test
+================================================================
+  Start Neurons: 1000000
+  Multiplier:    2
+  Hosts:         10.0.1.2
+  Mem Limit:     4 GB
+================================================================
+
+>>> Testing size: 1000000 neurons
+[Step 1] Generating dataset...
+make[1]: Entering directory '/home/shared/distributed-snp-new'
+make[2]: Entering directory '/home/shared/distributed-snp-new'
+[0;34m▶[0m Building project...
+ninja: no work to do.
+[0;32m✓[0m Build complete
+[0;34m▶[0m Distributing binaries...
+[0;32m✓[0m Distribution complete
+make[2]: Leaving directory '/home/shared/distributed-snp-new'
+[0;34mGenerating Big Data dataset on 1 ranks...[0m
+Nodes: 10.0.1.2
+Output Dir: /home/shared/tmp/distributed-snp-new/bigdata/output
+Remote Dir: /home/shared/tmp/distributed-snp-new
+Neurons: 1000000
+Max Mem (GB): 4
+Generating data locally on each node...
+  Generating on node 10.0.1.2 (Rank 0)...
+Estimated Global Dataset Size: 0.216067 GB
+Estimated Partition Size (per node): 0.216067 GB
+Max Memory check passed: Partition is smaller than 4 GB
+Generating partitions...
+  Processing Rank 0 (1000000 neurons)...
+Assembling partitions...
+Done. Output in /home/shared/tmp/distributed-snp-new/bigdata/output
+make[1]: Leaving directory '/home/shared/distributed-snp-new'
+[Step 2] Running simulation...
+make[1]: Entering directory '/home/shared/distributed-snp-new'
+make[2]: Entering directory '/home/shared/distributed-snp-new'
+[0;34m▶[0m Building project...
+ninja: no work to do.
+[0;32m✓[0m Build complete
+[0;34m▶[0m Distributing binaries...
+[0;32m✓[0m Distribution complete
+make[2]: Leaving directory '/home/shared/distributed-snp-new'
+[0;34mRunning Big Data simulation on 1 ranks (10.0.1.2)...[0m
+Nodes: 10.0.1.2
+Output Dir: /home/shared/tmp/distributed-snp-new/bigdata/output
+Remote Dir: /home/shared/tmp/distributed-snp-new
+Implementation: optimized
+Partitioner: linear
+Running MPI Simulation...
+Running with Implementation: optimized, Partitioner: linear
+{
+  "nodes": 1,
+  "steps": 5,
+  "global_neurons": 1000000,
+  "global_rules": 1000000,
+  "global_synapses": 10001613,
+  "local_neurons": 1000000,
+  "local_rules": 1000000,
+  "local_synapses": 10001613,
+  "total_time_s": 0.0286014,
+  "max_comm_time_ms": 0.00027,
+  "max_compute_time_ms": 28.5989,
+  "state_checksum": 263551718
+}
+Retrieving results from Rank 0 (10.0.1.2)...
+Warning: Failed to retrieve results file from 10.0.1.2
+[0;32m✓[0m Run complete. Results in /home/shared/tmp/distributed-snp-new/bigdata/output/results.json
+make[1]: Leaving directory '/home/shared/distributed-snp-new'
+✅ Success at 1000000 neurons.
+
+>>> Testing size: 2000000 neurons
+[Step 1] Generating dataset...
+make[1]: Entering directory '/home/shared/distributed-snp-new'
+make[2]: Entering directory '/home/shared/distributed-snp-new'
+[0;34m▶[0m Building project...
+ninja: no work to do.
+[0;32m✓[0m Build complete
+[0;34m▶[0m Distributing binaries...
+[0;32m✓[0m Distribution complete
+make[2]: Leaving directory '/home/shared/distributed-snp-new'
+[0;34mGenerating Big Data dataset on 1 ranks...[0m
+Nodes: 10.0.1.2
+Output Dir: /home/shared/tmp/distributed-snp-new/bigdata/output
+Remote Dir: /home/shared/tmp/distributed-snp-new
+Neurons: 2000000
+Max Mem (GB): 4
+Generating data locally on each node...
+  Generating on node 10.0.1.2 (Rank 0)...
+Estimated Global Dataset Size: 0.432134 GB
+Estimated Partition Size (per node): 0.432134 GB
+Max Memory check passed: Partition is smaller than 4 GB
+Generating partitions...
+  Processing Rank 0 (2000000 neurons)...
+Assembling partitions...
+Done. Output in /home/shared/tmp/distributed-snp-new/bigdata/output
+make[1]: Leaving directory '/home/shared/distributed-snp-new'
+[Step 2] Running simulation...
+make[1]: Entering directory '/home/shared/distributed-snp-new'
+make[2]: Entering directory '/home/shared/distributed-snp-new'
+[0;34m▶[0m Building project...
+ninja: no work to do.
+[0;32m✓[0m Build complete
+[0;34m▶[0m Distributing binaries...
+[0;32m✓[0m Distribution complete
+make[2]: Leaving directory '/home/shared/distributed-snp-new'
+[0;34mRunning Big Data simulation on 1 ranks (10.0.1.2)...[0m
+Nodes: 10.0.1.2
+Output Dir: /home/shared/tmp/distributed-snp-new/bigdata/output
+Remote Dir: /home/shared/tmp/distributed-snp-new
+Implementation: optimized
+Partitioner: linear
+Running MPI Simulation...

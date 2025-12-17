@@ -149,20 +149,31 @@ else
     NUM_RANKS := $(NUM_NODES)
 endif
 
-bigdata-generate: build ## Generate Big Data dataset
-	@echo "$(BLUE)Generating Big Data dataset...$(NC)"
-	@mkdir -p $(OUTDIR)
-	@$(BUILD_DIR)/bin/bigdata_generator \
-		--neurons $(NEURONS) \
-		--ranks $(NUM_RANKS) \
-		--intra $(PINTRA) \
-		--inter $(PINTER) \
-		--outdir $(OUTDIR) \
-		--seed $(SEED) \
-		--mem-limit $(MEM_LIMIT_GB)
+bigdata-generate: ## Generate Big Data dataset
+	@$(MAKE) distribute NODES="$(DIST_NODES)"
+	@echo "$(BLUE)Generating Big Data dataset on $(NUM_RANKS) ranks...$(NC)"
+	@./scripts/generate_bigdata.sh "$(DIST_NODES)" "$(OUTDIR)" "$(REMOTE_DIR)" "$(BUILD_DIR)" "$(NEURONS)" "$(MEM_LIMIT_GB)"
+
+IMPL ?= optimized
+PARTITIONER ?= linear
 
 bigdata-run: ## Run Big Data simulation
 	@$(MAKE) distribute NODES="$(DIST_NODES)"
 	@echo "$(BLUE)Running Big Data simulation on $(NUM_RANKS) ranks ($(MPI_HOSTS))...$(NC)"
-	@./scripts/run_bigdata.sh "$(DIST_NODES)" "$(OUTDIR)" "$(STEPS)" "$(REMOTE_DIR)" "$(BUILD_DIR)" "$(NEURONS)"
+	@./scripts/run_bigdata.sh "$(DIST_NODES)" "$(OUTDIR)" "$(STEPS)" "$(REMOTE_DIR)" "$(IMPL)" "$(PARTITIONER)"
 	@echo "$(GREEN)✓$(NC) Run complete. Results in $(OUTDIR)/results.json"
+
+bigdata-verify: ## Verify distributed simulation against single-node run
+	@echo "$(BLUE)Verifying Big Data simulation...$(NC)"
+	@./scripts/verify_bigdata.sh "$(DIST_NODES)" "$(OUTDIR)" "$(STEPS)" "$(REMOTE_DIR)" "$(BUILD_DIR)" "$(NEURONS)"
+
+START_NEURONS ?= 1000000
+MULTIPLIER ?= 2
+
+bigdata-capacity: ## Run capacity stress test
+	@echo "$(BLUE)Running Capacity Stress Test...$(NC)"
+	@./scripts/find_max_capacity.sh "$(START_NEURONS)" "$(MULTIPLIER)" "$(MPI_HOSTS)" "$(MEM_LIMIT_GB)"
+
+bigdata-benchmark: ## Run comparison benchmark (Naive vs Optimized)
+	@echo "$(BLUE)Running Big Data Benchmark...$(NC)"
+	@python3 scripts/benchmark_bigdata.py

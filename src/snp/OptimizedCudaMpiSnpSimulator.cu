@@ -883,6 +883,9 @@ public:
         // Algorithm metrics
         metrics.algorithm.num_neurons = global_num_neurons;
         metrics.algorithm.local_neurons = local_num_neurons;
+        metrics.algorithm.total_rules = d_rules.count;
+        metrics.algorithm.num_synapses = d_local_synapses.count + d_export_synapses.count;
+        metrics.algorithm.local_synapses = d_local_synapses.count;
         
         // Determine partitioner name
         if (partitioner) {
