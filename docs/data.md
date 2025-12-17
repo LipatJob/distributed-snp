@@ -1,22 +1,21 @@
 # Benchmark Results
 
-## 1. Naive vs Optimized (2 Nodes)
-Comparison of Naive and Optimized implementations on 2 nodes for smaller datasets. All runs performed for 20 steps.
+## 1. Naive vs Optimized Simulator (2 Nodes)
 
 | Neurons | Implementation | Total Time (s) | Compute Time (ms) | Comm Time (ms) | Speedup (Total) |
 |---------|----------------|----------------|-------------------|----------------|-----------------|
 | 2M      | Naive          | 0.9834         | 184.28            | 801.29         | 1.00x           |
-| 2M      | Optimized      | 0.4748         | 127.84            | 331.60         | 2.07x           |
 | 4M      | Naive          | 2.0648         | 672.92            | 1393.28        | 1.00x           |
-| 4M      | Optimized      | 1.4426         | 509.03            | 910.51         | 1.43x           |
 | 6M      | Naive          | 2.9001         | 1130.90           | 1797.84        | 1.00x           |
-| 6M      | Optimized      | 2.5264         | 895.02            | 1599.44        | 1.15x           |
 
-## 2. Optimized Scalability (2 Nodes)
-Performance of the Optimized implementation on 2 nodes for larger datasets. All runs performed for 20 steps.
+
+## 2. Optimized Simulator (2 Nodes)
 
 | Neurons | Total Time (s) | Compute Time (ms) | Comm Time (ms) |
 |---------|----------------|-------------------|----------------|
+| 2M      | 0.4748         | 127.84            | 331.60         |
+| 4M      | 1.4426         | 509.03            | 910.51         |
+| 6M      | 2.5264         | 895.02            | 1599.44        |
 | 8M      | 2.9722         | 1224.16           | 1707.53        |
 | 10M     | 3.7883         | 1624.73           | 2120.21        |
 | 12M     | 4.4327         | 1970.87           | 2392.21        |
@@ -27,8 +26,7 @@ Performance of the Optimized implementation on 2 nodes for larger datasets. All 
 
 *Note: 22M failed.*
 
-## 3. Single Node Baseline (Optimized)
-Performance of the Optimized implementation on a single node.
+## 3. Optimized Simulator (1 Node)
 
 | Neurons | Steps | Total Time (s) | Compute Time (ms) | Comm Time (ms) |
 |---------|-------|----------------|-------------------|----------------|
