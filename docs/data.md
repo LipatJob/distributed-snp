@@ -8,6 +8,7 @@
 | 4M      | Naive          | 2.0648         | 672.92            | 1393.28        | 1.00x           |
 | 6M      | Naive          | 2.9001         | 1130.90           | 1797.84        | 1.00x           |
 
+*Note: Failed at 8M.*
 
 ## 2. Optimized Simulator (2 Nodes)
 
@@ -24,7 +25,7 @@
 | 18M     | 6.2748         | 3081.94           | 3085.16        |
 | 20M     | 6.5826         | 3481.36           | 2960.80        |
 
-*Note: 22M failed.*
+*Note: Failed at 22M.*
 
 ## 3. Optimized Simulator (1 Node)
 
@@ -37,3 +38,5 @@
 | 10M     | 20    | 3.1940         | 3193.97           | ~0             |
 
 *Note: Failed at 12M.*
+
+
