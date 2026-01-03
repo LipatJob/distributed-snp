@@ -103,11 +103,58 @@ extract_nsys_stats() {
     
     for rep_file in $rep_files; do
         local base="${rep_file%.nsys-rep}"
-        nsys stats --report cuda_api_sum,cuda_gpu_kern_sum,cuda_gpu_mem_size_sum,cuda_gpu_mem_time_sum,cuda_gpu_sum,cuda_kern_exec_sum,cuda_api_gpu_sum,mpi_event_sum,mpi_msg_size_sum \
+        local relevant_metrics=(
+            "cuda_api_sum"
+            "cuda_gpu_kern_sum"
+            "cuda_gpu_mem_size_sum"
+            "cuda_gpu_mem_time_sum"
+            "cuda_gpu_sum"
+            "cuda_kern_exec_sum"
+            "cuda_api_gpu_sum"
+            "mpi_event_sum"
+            "mpi_msg_size_sum"
+        )
+
+        nsys stats --report $(IFS=, ; echo "${relevant_metrics[*]}") \
             --format csv --quiet --output "${base}_stats" "$rep_file" 2>/dev/null || true
     done
     
     log_success "Metrics exported"
+}
+
+extract_ncu_stats() {
+    local base_pattern="$1"
+    
+    log_step "Extracting ncu metrics..."
+    
+    local relevant_metrics=(
+        "gpu__time_duration.sum"
+        "l1tex__data_bank_conflicts_pipe_lsu_mem_shared.sum"
+        "smsp__average_warps_issue_stalled_barrier_per_issue_active.pct"
+        "sm__sass_branch_targets.avg"
+        "sm__sass_branch_targets_threads_divergent.sum"
+        "l1tex__t_bytes_lookup_hit.sum"
+        "l1tex__t_bytes_lookup_miss.sum"
+        "lts__t_sectors_lookup_hit.sum"
+        "lts__t_sectors_lookup_miss.sum"
+        "lts__t_requests_lookup_hit.sum"
+        "lts__t_requests_lookup_miss.sum"
+        "dram__bytes_read.sum"
+        "dram__bytes_write.sum"
+        "smsp__warp_issue_stalled_long_scoreboard_per_warp_active.pct"
+        "smsp__warp_issue_stalled_short_scoreboard_per_warp_active.pct"
+        "smsp__warp_issue_stalled_wait_per_warp_active.pct"
+        "smsp__warp_issue_stalled_membar_per_warp_active.pct"
+        "smsp__warp_issue_stalled_mio_throttle_per_warp_active.pct"
+        "l1tex__t_bytes_lookup_hit.sum" "l1tex__t_bytes_lookup_miss.sum"
+        "dram__bytes_read.sum" "dram__bytes_write.sum"
+    )
+    local rep_files=$(ls ${base_pattern}*.ncu-rep 2>/dev/null || echo "")
+    for rep_file in $rep_files; do
+        local base="${rep_file%.ncu-rep}"
+        ncu --import "$rep_file" --metrics $(IFS=, ; echo "${relevant_metrics[*]}") --page raw --csv > "${base}_metrics.csv"
+        echo -e "${GREEN}✓ Metrics saved to: ${base}_metrics.csv${NC}"
+    done
 }
 
 run_mpi_profiler() {
@@ -155,14 +202,17 @@ run_mpi_profiler() {
         local mpi_cmd="mpirun -np 3 --host localhost,10.0.0.2,10.0.1.2 \
             --mca btl_tcp_if_include ens5 --mca oob_tcp_if_include ens5 \
             --mca orte_abort_on_non_zero_status 0"
-        eval "$mpi_cmd $profiler_cmd $app_cmd" 2>&1 | grep -v "^Collecting\|^==\|Primary job\|mpirun detected" || true
+        eval "$mpi_cmd $profiler_cmd $app_cmd"  2>&1 | grep -v "^Collecting\|^==\|Primary job\|mpirun detected" || true
     else
         eval "$profiler_cmd $app_cmd" 2>&1 | grep -v "^Collecting\|^==" || true
     fi
     
     log_success "Profile saved: ${base}*"
     
-    [ "$tool" == "nsys" ] && extract_nsys_stats "$base"
+    case "$tool" in
+        "nsys") extract_nsys_stats "$base" ;;
+        "ncu")  extract_ncu_stats "$base" ;;
+    esac
 }
 
 run_profiling_for_impl() {

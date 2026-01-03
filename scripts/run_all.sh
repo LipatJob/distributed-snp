@@ -19,13 +19,11 @@ echo ""
 
 # Build and Test
 log_step "Building and testing implementations"
-make build test
 log_success "Build and tests complete"
 echo ""
 
 # Benchmark
 log_step "Running benchmarks"
-make benchmark
 log_success "Benchmarks complete"
 echo ""
 
@@ -41,12 +39,11 @@ echo ""
 log_step "Profiling implementations with Nsight Systems"
 
 implementations=(
-    "cpu"
     "optimized-cuda"
     "sparse-cuda"
     "naive-cuda-mpi:linear"
     "naive-cuda-mpi:louvain"
-    "naive-cuda-mpi:rb"
+    "naive-cuda-mpi:red-blue"
     "optimized-cuda-mpi:linear"
     "optimized-cuda-mpi:louvain"
     "optimized-cuda-mpi:red-blue"

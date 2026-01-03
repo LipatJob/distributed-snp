@@ -38,15 +38,11 @@ struct ProfileConfig {
 // Data Generation Utilities
 // ============================================================================
 
-std::vector<int> generateRandomData(size_t size, int maxValue, unsigned seed = 42) {
+std::vector<int> generateReversedSorted(size_t size) {
     std::vector<int> data(size);
-    std::mt19937 rng(seed);
-    std::uniform_int_distribution<int> dist(0, maxValue);
-    
-    for (auto& val : data) {
-        val = dist(rng);
+    for (size_t i = 0; i < size; ++i) {
+        data[i] = static_cast<int>(size - i - 1);
     }
-    
     return data;
 }
 
@@ -77,7 +73,7 @@ void profileImplementation(const ProfileConfig& config, int rank, int worldSize)
     }
     
     // Generate test data
-    auto data = generateRandomData(config.arraySize, config.maxValue, 42);
+    auto data = generateReversedSorted(config.arraySize);
     
     // Create simulator instance from factory
     auto simulator = config.factory();
