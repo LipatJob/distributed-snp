@@ -1,4 +1,4 @@
-I want to create a python notebook that will generate visualizations that compare the results of nsys reports of different SNP implementations. The purpose is to understand the performance characteristic of the implementation better. We will also be including these visualizations on our paper. I want to input the timestamp and the list of implementations to compare. It must generate visualizations that compare the results.
+I'm planning to create visualizations that compare the results of nsys reports of different SNP implementations. The purpose is to understand the performance characteristic of the implementation better. These visualizations will be included on our paper
 
 Here's folder structure of the reports: nsys/<timestamp>/<implementation>/<report>
 
@@ -12,7 +12,9 @@ Here are the implementations available:
   - optimized-cuda-mpi:louvain
   - optimized-cuda-mpi:red-blue
 
-Here's what I am thinking so far. Feel free to change and add more as you see fit
+I want you to list down a list of visualizations that we must have in the analysis of our implementations of our paper.
+
+Here's what I am thinking so far. Feel free to change and add more as you see fit.
 
 For CUDA implementations,
 - Show how much time is spent on CPU vs CUDA kernel
