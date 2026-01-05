@@ -13,6 +13,11 @@ PROFILE_EXEC="${BUILD_DIR}/bin/snp_profile"
 
 mkdir -p "$OUTPUT_DIR"
 
+HOSTS=(
+    "localhost"
+    "10.0.0.2"
+    "10.0.1.2"
+)
 
 # Defaults
 IMPLEMENTATIONS=("optimized-cuda-mpi")
@@ -90,6 +95,21 @@ get_base_filename() {
 
 extract_nsys_stats() {
     local base_pattern="$1"
+    local is_mpi="$2"
+
+    if [ "$is_mpi" = true ]; then
+        log_step "Collecting nsys files from worker nodes..."
+        local master="${HOSTS[0]}"
+        local workers=("${HOSTS[@]:1}")
+        for node in "${workers[@]}"; do
+            local worker_file_paths=$(ssh shared@"$node" "ls ${base_pattern}"*nsys-rep 2>/dev/null || echo "")
+            for worker_file in $worker_file_paths; do
+                scp shared@"$node":"$worker_file" "${base_pattern}$(basename "$worker_file")"
+            done
+            
+        done
+    fi
+        
     
     log_step "Extracting nsys metrics..."
     
@@ -177,7 +197,7 @@ run_mpi_profiler() {
     # Build profiler command
     local profiler_cmd=""
     if [ "$tool" == "nsys" ]; then
-        profiler_cmd="/usr/local/cuda/bin/nsys profile --capture-range=cudaProfilerApi \
+        profiler_cmd="/usr/local/cuda/bin/nsys profile --capture-range=cudaProfilerApi --cpuctxsw=system-wide \
             --trace=cuda,mpi,nvtx,osrt --output=$output \
             --force-overwrite=true $NSYS_OPTS"
     else
@@ -195,11 +215,11 @@ run_mpi_profiler() {
     
     # Execute with or without MPI
     if [ "$is_mpi" = true ]; then
-        for node in "localhost" "10.0.0.2" "10.0.1.2"; do
+        for node in "${HOSTS[@]}"; do
             ssh shared@"$node" "mkdir -p $output_dir"  2>&1 || true
         done
         # Suppress MPI error messages when process exits during cleanup
-        local mpi_cmd="mpirun -np 3 --host localhost,10.0.0.2,10.0.1.2 \
+        local mpi_cmd="mpirun -np ${#HOSTS[@]} --host $(IFS=, ; echo "${HOSTS[*]}") \
             --mca btl_tcp_if_include ens5 --mca oob_tcp_if_include ens5 \
             --mca orte_abort_on_non_zero_status 0"
         eval "$mpi_cmd $profiler_cmd $app_cmd"  2>&1 | grep -v "^Collecting\|^==\|Primary job\|mpirun detected" || true
@@ -210,7 +230,7 @@ run_mpi_profiler() {
     log_success "Profile saved: ${base}*"
     
     case "$tool" in
-        "nsys") extract_nsys_stats "$base" ;;
+        "nsys") extract_nsys_stats "$base" "$is_mpi" ;;
         "ncu")  extract_ncu_stats "$base" ;;
     esac
 }

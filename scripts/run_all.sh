@@ -19,11 +19,13 @@ echo ""
 
 # Build and Test
 log_step "Building and testing implementations"
+make build test
 log_success "Build and tests complete"
 echo ""
 
 # Benchmark
 log_step "Running benchmarks"
+make benchmark
 log_success "Benchmarks complete"
 echo ""
 
