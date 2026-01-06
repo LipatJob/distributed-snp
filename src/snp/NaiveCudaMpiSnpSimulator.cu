@@ -44,12 +44,12 @@ namespace {
 
 // Holds state only for LOCAL neurons owned by this rank
 struct LocalNeuronData {
-    int* current_spikes;     // C(k)
-    int* initial_spikes;     // C(0)
-    bool* is_open;           // Status vector St(k)
-    int* delay_timer;        // Remaining delay
-    int* pending_emission;   // Spikes waiting for delay to expire
-    int count;
+    int* current_spikes = nullptr;     // C(k)
+    int* initial_spikes = nullptr;     // C(0)
+    bool* is_open = nullptr;           // Status vector St(k)
+    int* delay_timer = nullptr;        // Remaining delay
+    int* pending_emission = nullptr;   // Spikes waiting for delay to expire
+    int count = 0;
 
     void allocate(int n) {
         count = n;
@@ -73,18 +73,18 @@ struct LocalNeuronData {
 
 // Holds rules associated with LOCAL neurons
 struct LocalRuleData {
-    int* neuron_local_idx;   // Index relative to local partition (0 to local_count-1)
-    int* threshold;
-    int* consumed;
-    int* produced;
-    int* delay;
+    int* neuron_local_idx = nullptr;   // Index relative to local partition (0 to local_count-1)
+    int* threshold = nullptr;
+    int* consumed = nullptr;
+    int* produced = nullptr;
+    int* delay = nullptr;
     
     // CSR-like indexing for rules per neuron
-    int* rule_start_idx;     // Size: local_neuron_count
-    int* rule_count;         // Size: local_neuron_count
+    int* rule_start_idx = nullptr;     // Size: local_neuron_count
+    int* rule_count = nullptr;         // Size: local_neuron_count
     
-    int total_rules_count;
-    int local_neuron_count;
+    int total_rules_count = 0;
+    int local_neuron_count = 0;
 
     void allocate(int n_neurons, int n_rules) {
         local_neuron_count = n_neurons;
@@ -119,10 +119,10 @@ struct LocalRuleData {
 
 // Fully Replicated Synapse List (Optimization: All ranks have all synapses)
 struct GlobalSynapseData {
-    int* source_global_id;
-    int* dest_global_id;
-    int* weight;
-    int count;
+    int* source_global_id = nullptr;
+    int* dest_global_id = nullptr;
+    int* weight = nullptr;
+    int count = 0;
 
     void allocate(int n) {
         count = n;
@@ -294,7 +294,10 @@ private:
     int steps_executed = 0;
 
 public:
-    NaiveCudaMpiSnpSimulator() {
+    NaiveCudaMpiSnpSimulator() 
+      : global_num_neurons(0), my_start_id(0), my_end_id(0), my_neuron_count(0),
+        d_local_production(nullptr), d_global_production(nullptr)
+    {
         MPI_Comm_rank(MPI_COMM_WORLD, &mpi_rank);
         MPI_Comm_size(MPI_COMM_WORLD, &mpi_size);
         // Default to Linear (Naive) Partitioning
@@ -394,7 +397,7 @@ public:
 
             // --- Phase 1: Local Compute ---
             if (my_neuron_count > 0) {
-                int grid = (my_neuron_count + BLOCK_SIZE - 1) / BLOCK_SIZE;
+                int grid = (static_cast<size_t>(my_neuron_count) + BLOCK_SIZE - 1) / BLOCK_SIZE;
                 kLocalComputeAndProduce<<<grid, BLOCK_SIZE>>>(
                     d_local_neurons, d_local_rules, d_local_production
                 );
@@ -429,7 +432,7 @@ public:
             // --- Phase 3: Global Distribution (on GPU) ---
             // Iterate synapses. If source fired (check d_global_production) and dest is mine, update mine.
             if (d_synapses.count > 0) {
-                int grid = (d_synapses.count + BLOCK_SIZE - 1) / BLOCK_SIZE;
+                int grid = (static_cast<size_t>(d_synapses.count) + BLOCK_SIZE - 1) / BLOCK_SIZE;
                 kDistributeGlobalSpikes<<<grid, BLOCK_SIZE>>>(
                     d_synapses, d_local_neurons, d_global_production,
                     my_start_id, my_end_id
@@ -488,7 +491,7 @@ public:
 
     void reset() override {
         if (my_neuron_count > 0) {
-            int grid = (my_neuron_count + BLOCK_SIZE - 1) / BLOCK_SIZE;
+            int grid = (static_cast<size_t>(my_neuron_count) + BLOCK_SIZE - 1) / BLOCK_SIZE;
             kResetLocalNeurons<<<grid, BLOCK_SIZE>>>(d_local_neurons);
             CUDA_CHECK(cudaDeviceSynchronize());
         }

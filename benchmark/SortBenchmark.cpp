@@ -44,12 +44,12 @@ namespace BenchUtils {
 
     std::string DistToString(Distribution d) {
         switch(d) {
-            case Distribution::RANDOM: return "Random";
-            case Distribution::SORTED: return "Sorted";
-            case Distribution::REVERSE_SORTED: return "Reverse";
-            case Distribution::NEARLY_SORTED: return "NearlySorted";
-            case Distribution::FEW_UNIQUE: return "FewUnique";
-            case Distribution::UNIFORM: return "Uniform";
+            case Distribution::RANDOM: return "random";
+            case Distribution::SORTED: return "sorted";
+            case Distribution::REVERSE_SORTED: return "reverse-sorted";
+            case Distribution::NEARLY_SORTED: return "nearly-sorted";
+            case Distribution::FEW_UNIQUE: return "few-unique";
+            case Distribution::UNIFORM: return "uniform";
             default: return "Unknown";
         }
     }
@@ -246,101 +246,135 @@ void RegisterSimulator(std::string name, SorterFactory factory, const std::vecto
 
 namespace Suites {
     using namespace BenchUtils;
+    const int runs = 16;
 
-    const int tinySize = 16;
-    const std::vector<TestConfig> Tiny = {
-        {"Tiny_Sort", tinySize, tinySize, Distribution::SORTED, 64},
-        {"Tiny_RevSort", tinySize, tinySize, Distribution::REVERSE_SORTED, 64},
-        {"Tiny_Rand", tinySize, tinySize, Distribution::RANDOM, 64},
+    // 1. Distributions Suite: Fixed size, various patterns
+    const int distSize = 1024;
+    const std::vector<TestConfig> Distributions = {
+        TestConfig{"dist-random", distSize, distSize, Distribution::REVERSE_SORTED, runs},
+        TestConfig{"dist-sorted", distSize, distSize, Distribution::SORTED, runs},
+        TestConfig{"dist-reverse", distSize, distSize, Distribution::REVERSE_SORTED, runs},
+        TestConfig{"dist-nearly", distSize, distSize, Distribution::NEARLY_SORTED, runs},
+        TestConfig{"dist-few-unique", distSize, distSize, Distribution::FEW_UNIQUE, runs},
+        TestConfig{"dist-uniform", distSize, distSize, Distribution::UNIFORM, runs}
     };
 
-    const int smallSize = 256;
-    const std::vector<TestConfig> Small = {
-        {"Small_Sort", smallSize, smallSize, Distribution::SORTED, 32},
-        {"Small_RevSort", smallSize, smallSize, Distribution::REVERSE_SORTED, 32},
-        {"Small_Rand", smallSize, smallSize, Distribution::RANDOM, 32},
-    };
-
-    const int mediumSize = 2048;
-    const std::vector<TestConfig> Medium = {
-        {"Medium_Sort", mediumSize, mediumSize, Distribution::SORTED, 16},
-        {"Medium_RevSort", mediumSize, mediumSize, Distribution::REVERSE_SORTED, 16},
-        {"Medium_Rand", mediumSize, mediumSize, Distribution::RANDOM, 16},
-    };
-
-    const int largeSize = 8192;
-    const std::vector<TestConfig> Large = {
-        {"Large_Sort", largeSize, largeSize, Distribution::SORTED, 4},
-        {"Large_RevSort", largeSize, largeSize, Distribution::REVERSE_SORTED, 4},
-        {"Large_Rand", largeSize, largeSize, Distribution::RANDOM, 4},
-    };
-
-    // Scaling Suite: Powers of two from 2 to 2048
-    const std::vector<TestConfig> Scaling = []
-    {
+    // 2. Scaling Suite: Powers of two
+    const std::vector<TestConfig> Scaling = [] {
         std::vector<TestConfig> c;
-        for (int s : {2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048})
-        {
-            c.push_back(TestConfig{"Scaling_Sort", (size_t)s, s, Distribution::SORTED, 20});
-            c.push_back(TestConfig{"Scaling_RevSort", (size_t)s, s, Distribution::REVERSE_SORTED, 20});
-            c.push_back(TestConfig{"Scaling_Rand", (size_t)s, s, Distribution::RANDOM, 20});
+        for (int s = 4; s <= 2048; s *= 2) {
+            c.push_back(TestConfig{"scaling", (size_t)s, s, Distribution::REVERSE_SORTED, runs});
         }
         return c;
     }();
-
-    // Combine vectors helper
-    std::vector<TestConfig> All() {
-        std::vector<TestConfig> all = Small;
-        all.insert(all.end(), Medium.begin(), Medium.end());
-        all.insert(all.end(), Large.begin(), Large.end());
-        return all;
-    }
 }
 
 // ============================================================================
 // 6. Main
 // ============================================================================
 
+namespace {
+    std::vector<std::string> SplitString(const std::string& s, char delimiter) {
+        std::vector<std::string> tokens;
+        std::string token;
+        std::istringstream tokenStream(s);
+        while (std::getline(tokenStream, token, delimiter)) {
+            tokens.push_back(token);
+        }
+        return tokens;
+    }
+}
+
 int main(int argc, char** argv) {
     MPI_Init(&argc, &argv);
     int rank;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
-    // --- REGISTRATION PHASE ---
-    // This is where you select which simulators run "by default" or add new ones.
+    // --- REGISTRIES ---
     
-    // 1. CPU
-    RegisterSimulator("CpuSnp", createNaiveCpuSnpSort, Suites::Scaling);
+    std::map<std::string, SorterFactory> simRegistry = {
+        {"cpu", createNaiveCpuSnpSort},
 
-    // 2. Sparse CUDA
-    RegisterSimulator("SparseCudaSnp", createSparseCudaSnpSort, Suites::Scaling);
+        // CUDA
+        {"optimized-cuda", createOptimizedCudaSnpSort},
+        {"sparse-cuda", createSparseCudaSnpSort},
 
-    // 3. CUDA
-    RegisterSimulator("OptimizedCudaSnp", createOptimizedCudaSnpSort, Suites::Scaling);
+        // Naive MPI
+        {"naive-cuda-mpi:linear", []() { return createNaiveCudaMpiSnpSort(PartitionerType::LINEAR); }},
+        {"naive-cuda-mpi:louvain", []() { return createNaiveCudaMpiSnpSort(PartitionerType::LOUVAIN); }},
+        {"naive-cuda-mpi:red-blue", []() { return createNaiveCudaMpiSnpSort(PartitionerType::RED_BLUE_BFS); }},
+        
+        // Optimized MPI
+        {"optimized-cuda-mpi:linear", []() { return createOptimizedCudaMpiSnpSort(PartitionerType::LINEAR); }},
+        {"optimized-cuda-mpi:louvain", []() { return createOptimizedCudaMpiSnpSort(PartitionerType::LOUVAIN); }},
+        {"optimized-cuda-mpi:red-blue", []() { return createOptimizedCudaMpiSnpSort(PartitionerType::RED_BLUE_BFS); }}
+    };
 
-    // 4. Naive CUDA/MPI
-    RegisterSimulator("NaiveCudaMpiSnp", []()
-                      { return createNaiveCudaMpiSnpSort(); }, Suites::Scaling);
+    std::map<std::string, std::vector<BenchUtils::TestConfig>> suiteRegistry = {
+        {"distributions", Suites::Distributions},
+        {"scaling", Suites::Scaling}
+    };
 
-    // 5. CUDA/MPI (Linear - Default)
-    RegisterSimulator("OptimizedCudaMpiSnp_Linear", []()
-                      { return createOptimizedCudaMpiSnpSort(PartitionerType::LINEAR); }, Suites::Scaling);
+    // --- ARGUMENT PARSING ---
 
-    // 5b. CUDA/MPI (Louvain)
-    RegisterSimulator("OptimizedCudaMpiSnp_Louvain", []()
-                      { return createOptimizedCudaMpiSnpSort(PartitionerType::LOUVAIN); }, Suites::Scaling);
+    std::vector<std::string> requestedImpls;
+    std::vector<std::string> requestedSuites;
+    std::vector<char*> benchArgvList;
+    benchArgvList.push_back(argv[0]);
 
-    // 5c. CUDA/MPI (Red-Blue)
-    RegisterSimulator("OptimizedCudaMpiSnp_RedBlue", []()
-                      { return createOptimizedCudaMpiSnpSort(PartitionerType::RED_BLUE_BFS); }, Suites::Scaling);
+    for (int i = 1; i < argc; ++i) {
+        std::string arg = argv[i];
+        if (arg.find("--impls=") == 0) {
+            requestedImpls = SplitString(arg.substr(8), ',');
+        } else if (arg.find("--suites=") == 0) {
+            requestedSuites = SplitString(arg.substr(9), ',');
+        } else {
+            benchArgvList.push_back(argv[i]);
+        }
+    }
+
+    // Default fallbacks if no specific args provided
+    if (requestedImpls.empty() && requestedSuites.empty()) {
+        requestedImpls = {
+            "cpu", 
+            "optimized-cuda", 
+            "optimized-cuda-mpi:linear"
+        };
+        requestedSuites = {"scaling"};
+    } else {
+        if (requestedImpls.empty()) requestedImpls = {"cpu"}; 
+        if (requestedSuites.empty()) requestedSuites = {"scaling"};
+    }
+
+    // --- REGISTRATION PHASE ---
+
+    for (const auto& implName : requestedImpls) {
+        if (simRegistry.count(implName)) {
+            for (const auto& suiteName : requestedSuites) {
+                if (suiteRegistry.count(suiteName)) {
+                    RegisterSimulator(implName, simRegistry[implName], suiteRegistry[suiteName]);
+                } else if (rank == 0) {
+                    std::cerr << "Warning: Unknown suite '" << suiteName << "' ignored.\n";
+                }
+            }
+        } else if (rank == 0) {
+            std::cerr << "Warning: Unknown simulator '" << implName << "' ignored.\n";
+        }
+    }
+
+    // Prepared args for Google Benchmark
+    int benchArgc = static_cast<int>(benchArgvList.size());
+    char** benchArgv = benchArgvList.data();
 
     // --- EXECUTION PHASE ---
     // Only rank 0 initializes benchmark with args to handle output file writing
     if (rank == 0) {
-        ::benchmark::Initialize(&argc, argv);
+        ::benchmark::Initialize(&benchArgc, benchArgv);
         ::benchmark::RunSpecifiedBenchmarks();
     } else {
         // Non-root ranks: minimal args to prevent file output
+        // We pass the filtered args, assuming --benchmark_... flags are handled by rank 0 mostly or don't affect file IO directly in Initialize in a hazardous way for MPI workers,
+        // BUT the original code used minimal args for workers. Let's respect that safety.
         int argc_minimal = 1;
         char* argv_minimal[] = {argv[0]};
         ::benchmark::Initialize(&argc_minimal, argv_minimal);

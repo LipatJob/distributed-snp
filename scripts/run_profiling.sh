@@ -37,6 +37,29 @@ BLUE='\033[0;34m'
 RED='\033[0;31m'
 NC='\033[0m'
 
+relevant_ncu_metrics=(
+    "gpu__time_duration.sum"
+    "l1tex__data_bank_conflicts_pipe_lsu_mem_shared.sum"
+    "smsp__average_warps_issue_stalled_barrier_per_issue_active.pct"
+    "sm__sass_branch_targets.avg"
+    "sm__sass_branch_targets_threads_divergent.sum"
+    "l1tex__t_bytes_lookup_hit.sum"
+    "l1tex__t_bytes_lookup_miss.sum"
+    "lts__t_sectors_lookup_hit.sum"
+    "lts__t_sectors_lookup_miss.sum"
+    "lts__t_requests_lookup_hit.sum"
+    "lts__t_requests_lookup_miss.sum"
+    "dram__bytes_read.sum"
+    "dram__bytes_write.sum"
+    "smsp__warp_issue_stalled_long_scoreboard_per_warp_active.pct"
+    "smsp__warp_issue_stalled_short_scoreboard_per_warp_active.pct"
+    "smsp__warp_issue_stalled_wait_per_warp_active.pct"
+    "smsp__warp_issue_stalled_membar_per_warp_active.pct"
+    "smsp__warp_issue_stalled_mio_throttle_per_warp_active.pct"
+    "l1tex__t_bytes_lookup_hit.sum" "l1tex__t_bytes_lookup_miss.sum"
+    "dram__bytes_read.sum" "dram__bytes_write.sum"
+)
+
 log_step() { echo -e "${BLUE}▶${NC} $1"; }
 log_success() { echo -e "${GREEN}✓${NC} $1"; }
 log_error() { echo -e "${RED}✗${NC} $1"; }
@@ -147,32 +170,10 @@ extract_ncu_stats() {
     
     log_step "Extracting ncu metrics..."
     
-    local relevant_metrics=(
-        "gpu__time_duration.sum"
-        "l1tex__data_bank_conflicts_pipe_lsu_mem_shared.sum"
-        "smsp__average_warps_issue_stalled_barrier_per_issue_active.pct"
-        "sm__sass_branch_targets.avg"
-        "sm__sass_branch_targets_threads_divergent.sum"
-        "l1tex__t_bytes_lookup_hit.sum"
-        "l1tex__t_bytes_lookup_miss.sum"
-        "lts__t_sectors_lookup_hit.sum"
-        "lts__t_sectors_lookup_miss.sum"
-        "lts__t_requests_lookup_hit.sum"
-        "lts__t_requests_lookup_miss.sum"
-        "dram__bytes_read.sum"
-        "dram__bytes_write.sum"
-        "smsp__warp_issue_stalled_long_scoreboard_per_warp_active.pct"
-        "smsp__warp_issue_stalled_short_scoreboard_per_warp_active.pct"
-        "smsp__warp_issue_stalled_wait_per_warp_active.pct"
-        "smsp__warp_issue_stalled_membar_per_warp_active.pct"
-        "smsp__warp_issue_stalled_mio_throttle_per_warp_active.pct"
-        "l1tex__t_bytes_lookup_hit.sum" "l1tex__t_bytes_lookup_miss.sum"
-        "dram__bytes_read.sum" "dram__bytes_write.sum"
-    )
     local rep_files=$(ls ${base_pattern}*.ncu-rep 2>/dev/null || echo "")
     for rep_file in $rep_files; do
         local base="${rep_file%.ncu-rep}"
-        ncu --import "$rep_file" --metrics $(IFS=, ; echo "${relevant_metrics[*]}") --page raw --csv > "${base}_metrics.csv"
+        ncu --import "$rep_file" --metrics $(IFS=, ; echo "${relevant_ncu_metrics[*]}") --page raw --csv > "${base}_metrics.csv"
         echo -e "${GREEN}✓ Metrics saved to: ${base}_metrics.csv${NC}"
     done
 }
@@ -201,7 +202,7 @@ run_mpi_profiler() {
             --trace=cuda,mpi,nvtx,osrt --output=$output \
             --force-overwrite=true $NSYS_OPTS"
     else
-        local ncu_opts="${NCU_OPTS:---set full --call-stack}"
+        local ncu_opts="${NCU_OPTS:---set full --call-stack} --metrics $(IFS=, ; echo "${relevant_ncu_metrics[*]}")"
         profiler_cmd="/usr/local/cuda/bin/ncu $ncu_opts --export $output --force-overwrite"
     fi
     

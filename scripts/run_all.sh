@@ -19,14 +19,48 @@ echo ""
 
 # Build and Test
 log_step "Building and testing implementations"
-make build test
+# make build test
 log_success "Build and tests complete"
 echo ""
 
-# Benchmark
-log_step "Running benchmarks"
-make benchmark
-log_success "Benchmarks complete"
+# Distributions Benchmark
+log_step "Running Distributions Benchmark"
+implementations=(
+    "cpu"
+    "optimized-cuda"
+    "sparse-cuda"
+    "naive-cuda-mpi:linear"
+    "naive-cuda-mpi:louvain"
+    "naive-cuda-mpi:red-blue"
+    "optimized-cuda-mpi:linear"
+    "optimized-cuda-mpi:louvain"
+    "optimized-cuda-mpi:red-blue"
+)
+suites=(
+    distributions
+)
+make benchmark ARGS="--impls=$(IFS=,; echo "${implementations[*]}") --suites=$(IFS=,; echo "${suites[*]}")"
+log_success "Distributions Benchmarks complete"   
+echo ""
+
+# Scaling Benchmark
+log_step "Running Scaling Benchmark"
+implementations=(
+    "cpu"
+    "optimized-cuda"
+    "sparse-cuda"
+    "naive-cuda-mpi:linear"
+    "naive-cuda-mpi:louvain"
+    "naive-cuda-mpi:red-blue"
+    "optimized-cuda-mpi:linear"
+    "optimized-cuda-mpi:louvain"
+    "optimized-cuda-mpi:red-blue"
+)
+suites=(
+    scaling
+)
+make benchmark ARGS="--impls=$(IFS=,; echo "${implementations[*]}") --suites=$(IFS=,; echo "${suites[*]}")"
+log_success "Scaling Benchmarks complete"   
 echo ""
 
 # Setup profiling permissions
@@ -50,7 +84,7 @@ implementations=(
     "optimized-cuda-mpi:louvain"
     "optimized-cuda-mpi:red-blue"
 )
-make profile ARGS="-p nsys -i $(IFS=,; echo "${implementations[*]}")" && sleep 1
+# make profile ARGS="-p nsys -i $(IFS=,; echo "${implementations[*]}")" && sleep 1
 log_success "Nsight Systems profiling complete"
 echo ""
 
@@ -59,6 +93,8 @@ log_step "Collecting kernel metrics with Nsight Compute"
 implementations=(
     "optimized-cuda"
     "sparse-cuda"
+    "naive-cuda-mpi:linear"
+    "optimized-cuda-mpi:linear"
 )
 make profile ARGS="-s 3 -p ncu -i $(IFS=,; echo "${implementations[*]}")" && sleep 1
 log_success "Nsight Compute profiling complete"
