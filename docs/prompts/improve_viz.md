@@ -1,0 +1,1 @@
+I want you to revamp this notebook for visualizing various profiling/benchmarks. I've attached some sample data that is uses. They are going to be attached to in our paper. Consider also that our paper uses a two column format. Simplify the code and make the notebooks more consistent. Make the visualizations simple, easy to read and pleasant to look at.
