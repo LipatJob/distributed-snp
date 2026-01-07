@@ -202,8 +202,8 @@ run_mpi_profiler() {
             --trace=cuda,mpi,nvtx,osrt --output=$output \
             --force-overwrite=true $NSYS_OPTS"
     else
-        local ncu_opts="${NCU_OPTS:---set full --call-stack} --metrics $(IFS=, ; echo "${relevant_ncu_metrics[*]}")"
-        profiler_cmd="/usr/local/cuda/bin/ncu $ncu_opts --export $output --force-overwrite"
+        local ncu_opts="${NCU_OPTS:---section SpeedOfLight --section MemoryWorkloadAnalysis --section Occupancy --call-stack --launch-count 20} --metrics $(IFS=, ; echo "${relevant_ncu_metrics[*]}")"
+        profiler_cmd="/usr/local/cuda/bin/ncu $ncu_opts --export $output --force-overwrite --lockstep-kernel-launch"
     fi
     
     local app_cmd
@@ -221,9 +221,8 @@ run_mpi_profiler() {
         done
         # Suppress MPI error messages when process exits during cleanup
         local mpi_cmd="mpirun -np ${#HOSTS[@]} --host $(IFS=, ; echo "${HOSTS[*]}") \
-            --mca btl_tcp_if_include ens5 --mca oob_tcp_if_include ens5 \
-            --mca orte_abort_on_non_zero_status 0"
-        eval "$mpi_cmd $profiler_cmd $app_cmd"  2>&1 | grep -v "^Collecting\|^==\|Primary job\|mpirun detected" || true
+            --mca btl_tcp_if_include ens5 --mca oob_tcp_if_include ens5"
+        eval "$mpi_cmd $profiler_cmd $app_cmd"
     else
         eval "$profiler_cmd $app_cmd" 2>&1 | grep -v "^Collecting\|^==" || true
     fi
