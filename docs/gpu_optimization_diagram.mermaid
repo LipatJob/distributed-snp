@@ -1,0 +1,37 @@
+```mermaid
+graph TD
+    Goal[Goal: Explain the GPU Magic]
+    
+    Goal --> CPU[Naive CPU]
+    Goal --> Sparse[Sparse GPU]
+    Goal --> Opt[Optimized GPU]
+
+    %% CPU Details
+    CPU --> CPU_Impl[Reference Implementation]
+    CPU_Impl --> CPU_OO[Object-Oriented]
+    CPU_OO --> CPU_Slow[Slow & Cache-Unfriendly]
+
+    %% Sparse Details
+    Sparse --> Sparse_Fmt[CSR / ELL Format]
+    Sparse_Fmt --> Sparse_Good[Good for Memory]
+    Sparse_Fmt --> Sparse_Bad[Bad for Random Access]
+
+    %% Optimized Details
+    Opt --> Opt_SoA[Structure of Arrays]
+    Opt_SoA --> Opt_Coalesced[Memory Layout Aligned<br/>for Coalesced Access]
+
+    Opt --> Opt_Fusion[Kernel Fusion]
+    Opt_Fusion --> Opt_Overhead[Merging Firing/Forgetting<br/>Reduces Launch Overhead]
+
+    Opt --> Opt_Pinned[Pinned Memory]
+    Opt_Pinned --> Opt_Transfer[Faster Host ↔ Device Transfers]
+
+    %% Styling
+    classDef default fill:#f9f9f9,stroke:#333,stroke-width:2px;
+    classDef bad fill:#ffcccc,stroke:#ff0000;
+    classDef good fill:#ccffcc,stroke:#00ff00;
+    classDef neutral fill:#e1e1e1,stroke:#333;
+
+    class CPU_Slow,Sparse_Bad bad;
+    class Sparse_Good,Opt_Coalesced,Opt_Overhead,Opt_Transfer good;
+```

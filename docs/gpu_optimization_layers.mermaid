@@ -1,0 +1,48 @@
+```mermaid
+graph TD
+    %% Title: GPU Optimization Layers
+    
+    %% Layer 1: The Abstraction / Paradigm
+    subgraph L1 [Layer 1: Paradigm & Strategy]
+        direction LR
+        CPU_App[Naive CPU:<br/>Object-Oriented]
+        Sparse_App[Sparse GPU:<br/>Compressed Logic]
+        Opt_App[Optimized GPU:<br/>Data-Oriented]
+    end
+
+    %% Layer 2: Data Organization (The "OSI Presentation Layer" equivalent)
+    subgraph L2 [Layer 2: Memory & Data Layout]
+        direction LR
+        CPU_Data[Array of Structures (AoS)<br/>(Scattered Objects)]
+        Sparse_Data[CSR / ELL Format<br/>(Index Arrays)]
+        Opt_Data[Structure of Arrays (SoA)<br/>Pinned Memory Buffers]
+    end
+
+    %% Layer 3: Hardware Execution (The "OSI Physical Layer" equivalent)
+    subgraph L3 [Layer 3: Hardware Execution & Performance]
+        direction LR
+        CPU_HW[Cache Misses &<br/>Pointer Chasing]
+        Sparse_HW[Low Memory Footprint<br/>Bad Random Access]
+        Opt_HW[Coalesced Access (Aligned)<br/>Kernel Fusion (Low Overhead)<br/>Fast Host-Device Transfer]
+    end
+
+    %% Connections showing the stack for each approach
+    CPU_App --> CPU_Data
+    CPU_Data --> CPU_HW
+
+    Sparse_App --> Sparse_Data
+    Sparse_Data --> Sparse_HW
+
+    Opt_App --> Opt_Data
+    Opt_Data --> Opt_HW
+
+    %% Styling
+    classDef layer fill:#f9f9f9,stroke:#333,stroke-width:2px;
+    classDef cpu fill:#ffcccc,stroke:#ff0000;
+    classDef sparse fill:#ffffcc,stroke:#cccc00;
+    classDef opt fill:#ccffcc,stroke:#00ff00;
+
+    class CPU_App,CPU_Data,CPU_HW cpu;
+    class Sparse_App,Sparse_Data,Sparse_HW sparse;
+    class Opt_App,Opt_Data,Opt_HW opt;
+```

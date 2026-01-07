@@ -1,0 +1,83 @@
+```mermaid
+graph LR
+    %% Visual Strategy: The Noise vs. The Network
+
+    %% ==========================================
+    %% Left Side: Naive MPI (Replicated Topology)
+    %% ==========================================
+    subgraph Naive [Naive MPI: The Crowded Room]
+        direction TB
+        
+        %% Nodes holding full copies
+        N_A((Node A<br/>Full Graph))
+        N_B((Node B<br/>Full Graph))
+        N_C((Node C<br/>Full Graph))
+
+        %% All-to-All Mesh (The Noise)
+        N_A <== "MPI_Allgatherv<br/>(Wasteful Broadcast)" ==> N_B
+        N_B <== "MPI_Allgatherv" ==> N_C
+        N_C <== "MPI_Allgatherv" ==> N_A
+        
+        style Naive fill:#fff0f0,stroke:#ff0000,stroke-width:2px
+        linkStyle 0,1,2 stroke:#ff0000,stroke-width:4px
+    end
+
+    %% ==========================================
+    %% Right Side: Optimized MPI (Ghost Cells)
+    %% ==========================================
+    subgraph Optimized [Optimized MPI: The Map]
+        direction TB
+        
+        %% Node A (Top Left)
+        subgraph NodeA [Node A]
+            PartA[Partition A]
+            GhostA[Ghost Zone]
+        end
+        
+        %% Node B (Top Right / Middle)
+        subgraph NodeB [Node B]
+            PartB[Partition B]
+            GhostB[Ghost Zone]
+        end
+        
+        %% Node C (Bottom)
+        subgraph NodeC [Node C]
+            PartC[Partition C]
+            GhostC[Ghost Zone]
+        end
+
+        %% Targeted Connections (The Network)
+        GhostA <== "Targeted Border Crossing" ==> GhostB
+        GhostB <== "Targeted Border Crossing" ==> GhostC
+        
+        %% Note: No connection between A and C
+        
+        style Optimized fill:#f0fff0,stroke:#00ff00,stroke-width:2px
+        style GhostA fill:#e1e1e1,stroke-dasharray: 5 5
+        style GhostB fill:#e1e1e1,stroke-dasharray: 5 5
+        style GhostC fill:#e1e1e1,stroke-dasharray: 5 5
+        
+        linkStyle 3,4 stroke:#00aa00,stroke-width:3px
+    end
+
+    %% ==========================================
+    %% Deep Dive: Multi-GPU Awareness
+    %% ==========================================
+    subgraph ProTip [Pro Tip: Multi-GPU Awareness]
+        direction LR
+        
+        GPU_A[GPU A]
+        GPU_B[GPU B]
+        Host_RAM[Host RAM<br/>(Slow Path)]
+
+        %% Fast Path
+        GPU_A == "GPUDirect / NVLink<br/>(Bypass CPU)" ==> GPU_B
+        
+        %% Slow Path (Visualized as bad)
+        GPU_A -.-> Host_RAM
+        Host_RAM -.-> GPU_B
+        
+        linkStyle 5 stroke:#0000ff,stroke-width:4px
+        linkStyle 6,7 stroke:#ff9999,stroke-dasharray: 3 3
+    end
+```

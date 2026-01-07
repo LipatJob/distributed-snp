@@ -1,0 +1,81 @@
+```mermaid
+graph TD
+    %% Main Container
+    subgraph Strategies [Partitioning Strategies]
+        direction LR
+
+        %% 1. Linear
+        subgraph Linear [Linear: The Blind Cut]
+            direction TB
+            
+            %% Rigid Cuts
+            Cut1[Block 1: 0-33]
+            Cut2[Block 2: 34-66]
+            Cut3[Block 3: 67-99]
+            
+            %% Heavy Red Edges
+            Cut1 == "Red Edge (Cut)" ==> Cut2
+            Cut2 == "Red Edge (Cut)" ==> Cut3
+            
+            style Cut1 shape:rect,fill:#fff
+            style Cut2 shape:rect,fill:#fff
+            style Cut3 shape:rect,fill:#fff
+            linkStyle 0,1 stroke:#ff0000,stroke-width:4px
+        end
+
+        %% 2. BFS
+        subgraph BFS [Red-Blue BFS: The Spreading Cut]
+            direction TB
+            
+            subgraph BlueBlob [Blue Wave]
+                B_Seed((Seed)) --> B_N1(( ))
+                B_N1 --> B_N2(( ))
+            end
+            
+            subgraph RedBlob [Red Wave]
+                R_Seed((Seed)) --> R_N1(( ))
+            end
+            
+            BlueBlob -.- RedBlob
+            
+            style BlueBlob fill:#ccccff,stroke:#0000ff
+            style RedBlob fill:#ffcccc,stroke:#ff0000
+        end
+
+        %% 3. Louvain
+        subgraph Louvain [Louvain: The Smart Cut]
+            direction TB
+            
+            subgraph Cluster1 [Community 1]
+                C1_A(( )) o--o C1_B(( ))
+                C1_B o--o C1_C(( ))
+                C1_C o--o C1_A
+            end
+            
+            subgraph Cluster2 [Community 2]
+                C2_A(( )) o--o C2_B(( ))
+                C2_B o--o C2_C(( ))
+                C2_C o--o C2_A
+            end
+            
+            %% Minimal Cut
+            Cluster1 -.->|Minimal Cut| Cluster2
+            
+            style Cluster1 fill:#ccffcc,stroke:#00aa00
+            style Cluster2 fill:#ccffcc,stroke:#00aa00
+            linkStyle 5 stroke:#999,stroke-width:1px,stroke-dasharray: 5 5
+        end
+    end
+
+    %% Trade-off Arrow
+    subgraph Tradeoff [Trade-off Spectrum]
+        direction LR
+        Left[Fast Setup / Slow Simulation] ==> Right[Slow Setup / Fast Simulation]
+        style Left fill:#fff,stroke:none
+        style Right fill:#fff,stroke:none
+        linkStyle 6 stroke-width:4px
+    end
+
+    Linear -.-> Left
+    Louvain -.-> Right
+```

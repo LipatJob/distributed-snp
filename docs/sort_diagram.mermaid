@@ -1,0 +1,19 @@
+```mermaid
+classDiagram
+    class ISort {
+        <<interface>>
+        +load(data: int*, size: size_t) void
+        +execute() vector~int~
+        +sort(data: int*, size: size_t) void
+        +getPerformanceMetrics() PerformanceMetrics
+    }
+
+    class SnpSort {
+        -simulator: unique_ptr~ISnpSimulator~
+        -config: SnpSystemConfig
+        +load(data: int*, size: size_t) void
+        +execute() vector~int~
+    }
+
+    ISort <|.. SnpSort
+```

@@ -1,0 +1,74 @@
+```mermaid
+graph TD
+    %% Title: Comprehensive Test & Benchmark Matrix
+
+    subgraph Matrix [Test Matrix Dimensions]
+        direction TB
+
+        %% Dimension 1: Distributions
+        subgraph Dist [Input Distributions]
+            direction TB
+            D1[RANDOM: Uniform Random]
+            D2[SORTED: Already Ordered]
+            D3[REVERSE: Worst Case]
+            D4[NEARLY: ~10% Swapped]
+            D5[FEW UNIQUE: Limited Values]
+            D6[UNIFORM: All Same Value]
+        end
+
+        %% Dimension 2: Sizes
+        subgraph Sizes [Input Sizes (Powers of 2)]
+            direction LR
+            S1[32] --> S2[64] --> S3[128] --> S4[256] --> S5[...] --> S6[8192+]
+            Note_Size[Tests Scalability Limits]
+        end
+
+        %% Dimension 3: Configs
+        subgraph Configs [System Configurations]
+            direction TB
+            
+            subgraph Backends [5 Backends]
+                B1[Naive CPU]
+                B2[Sparse CUDA]
+                B3[Optimized CUDA]
+                B4[Naive MPI+CUDA]
+                B5[Optimized MPI+CUDA]
+            end
+
+            subgraph Parts [3 Partitioners]
+                P1[Linear]
+                P2[Red-Blue BFS]
+                P3[Louvain]
+            end
+            
+            subgraph Seeds [Randomness]
+                Seed[Multiple Seeds]
+            end
+        end
+    end
+
+    %% Execution Flow
+    Dist ==>|Selects Data| Execution
+    Sizes ==>|Sets Scale| Execution
+    Configs ==>|Configures Env| Execution
+
+    subgraph Execution [Test Execution Loop]
+        Run[Run Benchmark / Test]
+        Verify[Verify Correctness]
+        Measure[Measure Performance]
+    end
+
+    Run --> Verify
+    Run --> Measure
+
+    %% Styling
+    classDef dist fill:#e1f5fe,stroke:#0277bd;
+    classDef size fill:#fff3e0,stroke:#ef6c00;
+    classDef config fill:#e8f5e9,stroke:#2e7d32;
+    classDef exec fill:#f3e5f5,stroke:#7b1fa2;
+
+    class D1,D2,D3,D4,D5,D6 dist;
+    class S1,S2,S3,S4,S5,S6,Note_Size size;
+    class B1,B2,B3,B4,B5,P1,P2,P3,Seed config;
+    class Run,Verify,Measure exec;
+```

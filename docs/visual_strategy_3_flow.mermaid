@@ -1,0 +1,43 @@
+```mermaid
+graph TD
+    %% Visual Strategy 3: Optimizing Flow (Fusion & Pinned Memory)
+
+    %% Part 1: Kernel Fusion
+    subgraph Fusion [Kernel Fusion: Reducing Overhead]
+        direction TB
+        
+        subgraph Timeline_Bad [Timeline A: Bad (Without Fusion)]
+            direction LR
+            L1[Launch Overhead] --> K1[Firing Kernel]
+            K1 --> S1[Stop]
+            S1 --> L2[Launch Overhead]
+            L2 --> K2[Forgetting Kernel]
+            K2 --> S2[Stop]
+            style L1 fill:#ffcccc
+            style L2 fill:#ffcccc
+        end
+        
+        subgraph Timeline_Good [Timeline B: Good (With Fusion)]
+            direction LR
+            L3[Launch Overhead] --> K3[Fused Firing & Forgetting Kernel]
+            K3 --> S3[Stop]
+            style L3 fill:#ccffcc
+        end
+    end
+
+    %% Part 2: Pinned Memory
+    subgraph Transfer [Pinned Memory: The VIP Lane]
+        direction LR
+        
+        Host[Host RAM]
+        GPU[GPU VRAM]
+
+        %% Path A: Slow
+        Host -- "Pageable Memory (Slow)<br/>OS Paging/Locking" --> GPU
+        linkStyle 2 stroke:#ff0000,stroke-width:2px,stroke-dasharray: 5 5
+
+        %% Path B: Fast
+        Host == "Pinned Memory (Fast)<br/>Direct DMA Access" ==> GPU
+        linkStyle 3 stroke:#00ff00,stroke-width:4px
+    end
+```

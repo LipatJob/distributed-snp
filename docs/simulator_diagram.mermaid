@@ -1,0 +1,55 @@
+```mermaid
+classDiagram
+    class ISnpSimulator {
+        <<interface>>
+        +loadSystem(config: SnpSystemConfig) bool
+        +step(steps: int) void
+        +getGlobalState() vector~int~
+        +reset() void
+        +getPerformanceMetrics() PerformanceMetrics
+    }
+
+    class NaiveCpuSnpSimulator {
+        -config: SnpSystemConfig
+        -configuration: vector~int~
+        -neuron_is_open: vector~bool~
+        +loadSystem(config: SnpSystemConfig) bool
+        +step(steps: int) void
+    }
+
+    class SparseCudaSnpSimulator {
+        -d_state: DeviceState
+        -d_rv: DeviceRuleVector
+        -d_sy: DeviceSynapseMatrix
+        +loadSystem(config: SnpSystemConfig) bool
+        +step(steps: int) void
+    }
+
+    class OptimizedCudaSnpSimulator {
+        -d_neurons: DeviceNeuronData
+        -d_rules: DeviceRuleData
+        +loadSystem(config: SnpSystemConfig) bool
+        +step(steps: int) void
+    }
+
+    class NaiveCudaMpiSnpSimulator {
+        -partitioner: unique_ptr~IPartitioner~
+        -local_neurons: LocalNeuronData
+        +loadSystem(config: SnpSystemConfig) bool
+        +step(steps: int) void
+    }
+
+    class OptimizedCudaMpiSnpSimulator {
+        -partitioner: unique_ptr~IPartitioner~
+        -d_local_neurons: OptimizedCudaSnpSimulator
+        -d_ghost_neurons: DeviceGhostData
+        +loadSystem(config: SnpSystemConfig) bool
+        +step(steps: int) void
+    }
+
+    ISnpSimulator <|.. NaiveCpuSnpSimulator
+    ISnpSimulator <|.. SparseCudaSnpSimulator
+    ISnpSimulator <|.. OptimizedCudaSnpSimulator
+    ISnpSimulator <|.. NaiveCudaMpiSnpSimulator
+    ISnpSimulator <|.. OptimizedCudaMpiSnpSimulator
+```

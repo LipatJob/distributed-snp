@@ -1,0 +1,30 @@
+```mermaid
+graph LR
+    %% Visual Strategy 2: Handling Sparsity
+
+    subgraph Dense_World [Wasteful Dense Matrix]
+        direction TB
+        Grid[0 0 1 0<br/>5 0 0 0<br/>0 0 0 2<br/>0 3 0 0]
+        Cross[❌ Wasteful]
+        
+        style Grid fill:#ffcccc,stroke:#ff0000
+        style Cross fill:#fff,stroke:none,color:#ff0000,font-size:20px
+    end
+
+    subgraph Sparse_World [Compressed Sparse Row (CSR)]
+        direction TB
+        
+        subgraph Arrays [Compact Arrays]
+            Val[Values: [1, 5, 2, 3]]
+            Col[Col Indices: [2, 0, 3, 1]]
+            Row[Row Offsets: [0, 1, 2, 3, 4]]
+        end
+        
+        Note[Great for memory capacity,<br/>but requires indirect memory lookups]
+        
+        style Arrays fill:#e6f3ff,stroke:#0066cc
+        style Note fill:#ffffcc
+    end
+
+    Dense_World -- Compression --> Sparse_World
+```

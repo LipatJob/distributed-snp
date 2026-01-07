@@ -1,0 +1,47 @@
+```mermaid
+graph LR
+    %% Visual Strategy 1: The Memory Layout Evolution (AoS vs. SoA)
+
+    subgraph CPU_Side [Naive CPU: Array of Structures (AoS)]
+        direction TB
+        note1[Scattered Memory<br/>Cache Misses Galore]
+        
+        subgraph Memory_AoS [Random Access Memory]
+            N1[Neuron 1<br/>[Spikes, Rules, Edges]]
+            N2[Neuron 2<br/>[Spikes, Rules, Edges]]
+            N3[Neuron 3<br/>[Spikes, Rules, Edges]]
+            N4[Neuron 4<br/>[Spikes, Rules, Edges]]
+        end
+
+        CPU_Head[CPU Head]
+        
+        %% Squiggly/Random access pattern
+        CPU_Head -.-> N1
+        CPU_Head -.-> N3
+        CPU_Head -.-> N2
+        CPU_Head -.-> N4
+        
+        style CPU_Side fill:#fff0f0,stroke:#ff0000
+        style note1 fill:#ffcccc
+    end
+
+    subgraph GPU_Side [Optimized GPU: Structure of Arrays (SoA)]
+        direction TB
+        note2[Contiguous Memory<br/>Coalesced Access (The Magic)]
+
+        subgraph Memory_SoA [Contiguous Memory Blocks]
+            Arr1[Array 1: All Spikes<br/>[N1, N2, N3, N4...]]
+            Arr2[Array 2: All Rules<br/>[N1, N2, N3, N4...]]
+            Arr3[Array 3: All Edges<br/>[N1, N2, N3, N4...]]
+        end
+
+        GPU_Warp[GPU Warp<br/>(32 Threads)]
+
+        %% Wide block arrow (Coalesced)
+        GPU_Warp ==> Arr1
+        GPU_Warp ==> Arr2
+        
+        style GPU_Side fill:#f0fff0,stroke:#00ff00
+        style note2 fill:#ccffcc
+    end
+```

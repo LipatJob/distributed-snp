@@ -1,0 +1,66 @@
+```mermaid
+graph TD
+    %% Title: Profiling & Benchmarking Stack
+
+    %% Layer 1: Orchestration (Scripts)
+    subgraph Orchestration [Layer 1: Orchestration & Automation]
+        direction TB
+        RunBench[scripts/run_benchmark.sh<br/>(MPI Orchestration)]
+        RunProf[scripts/run_profiling.sh<br/>(NSYS/NCU Wrapper)]
+    end
+
+    %% Layer 2: Execution (Binaries)
+    subgraph Execution [Layer 2: Target Executables]
+        direction LR
+        SortBench[bin/sort_benchmark<br/>(Google Benchmark)]
+        MicroBench[bin/microbenchmark<br/>(Google Benchmark)]
+        SnpProf[bin/snp_profile<br/>(Dedicated Profiling Target)]
+    end
+
+    %% Layer 3: Instrumentation (Tools)
+    subgraph Instrumentation [Layer 3: Instrumentation & Runtime]
+        direction LR
+        GBenchLib[Google Benchmark Lib]
+        MPI_Run[MPI Runtime<br/>(mpirun / mpiexec)]
+        NSYS[Nsight Systems<br/>(Timeline & API)]
+        NCU[Nsight Compute<br/>(Kernel Metrics)]
+    end
+
+    %% Layer 4: Analysis (Python)
+    subgraph Analysis [Layer 4: Analysis & Visualization]
+        direction TB
+        GenReport[benchmark/generate_report.py<br/>(JSON Parser)]
+        GenViz[benchmark/generate_visualizations.py<br/>(Matplotlib/Pandas)]
+        Reports[HTML/PDF Reports<br/>& Charts]
+    end
+
+    %% Connections
+    RunBench -->|Executes| SortBench
+    RunBench -->|Executes| MicroBench
+    RunProf -->|Wraps| NSYS
+    RunProf -->|Wraps| NCU
+    
+    NSYS -->|Profiles| SnpProf
+    NCU -->|Profiles| SnpProf
+
+    SortBench -->|Uses| GBenchLib
+    MicroBench -->|Uses| GBenchLib
+    SortBench -->|Distributed via| MPI_Run
+
+    SortBench -.->|Outputs JSON| GenReport
+    MicroBench -.->|Outputs JSON| GenReport
+    
+    GenReport -->|Data| GenViz
+    GenViz -->|Generates| Reports
+
+    %% Styling
+    classDef script fill:#e1f5fe,stroke:#01579b;
+    classDef binary fill:#e8f5e9,stroke:#2e7d32;
+    classDef tool fill:#fff3e0,stroke:#ef6c00;
+    classDef python fill:#f3e5f5,stroke:#7b1fa2;
+
+    class RunBench,RunProf script;
+    class SortBench,MicroBench,SnpProf binary;
+    class GBenchLib,MPI_Run,NSYS,NCU tool;
+    class GenReport,GenViz,Reports python;
+```

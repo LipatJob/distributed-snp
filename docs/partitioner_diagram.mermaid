@@ -1,0 +1,24 @@
+```mermaid
+classDiagram
+    class IPartitioner {
+        <<interface>>
+        +partition(config: SnpSystemConfig, num_partitions: int) vector~int~
+        +getType() PartitionerType
+    }
+
+    class LinearPartitioner {
+        +partition(config: SnpSystemConfig, num_partitions: int) vector~int~
+    }
+
+    class LouvainPartitioner {
+        +partition(config: SnpSystemConfig, num_partitions: int) vector~int~
+    }
+
+    class RedBluePartitioner {
+        +partition(config: SnpSystemConfig, num_partitions: int) vector~int~
+    }
+
+    IPartitioner <|.. LinearPartitioner
+    IPartitioner <|.. LouvainPartitioner
+    IPartitioner <|.. RedBluePartitioner
+```
