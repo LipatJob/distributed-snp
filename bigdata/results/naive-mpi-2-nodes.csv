@@ -1,0 +1,4 @@
+neurons,implementation,total_time_s,compute_time_ms,comm_time_ms,speedup
+2000000,Naive,0.9834,184.28,801.29,1.00
+4000000,Naive,2.0648,672.92,1393.28,1.00
+6000000,Naive,2.9001,1130.90,1797.84,1.00
