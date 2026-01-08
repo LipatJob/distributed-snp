@@ -19,7 +19,7 @@ endif()
 
 # Configuration Variables (Easily editable)
 set(CUDA_ARCH_TARGET "75" CACHE STRING "Target CUDA architecture")
-set(MPI_TEST_HOSTS "localhost,10.0.0.2,10.0.1.2" CACHE STRING "Hosts for MPI tests")
+set(MPI_TEST_HOSTS "localhost,10.0.0.3,10.0.1.3" CACHE STRING "Hosts for MPI tests")
 option(BUILD_TESTS "Build tests and benchmarks" ON)
 
 # --- KEY REQUEST: Centralized Build Artifacts ---
@@ -100,6 +100,7 @@ if(BUILD_TESTS)
     FetchContent_Declare(
         googletest
         URL https://github.com/google/googletest/archive/refs/tags/v1.17.0.zip
+        DOWNLOAD_EXTRACT_TIMESTAMP TRUE
     )
     FetchContent_MakeAvailable(googletest)
 
@@ -108,6 +109,7 @@ if(BUILD_TESTS)
     FetchContent_Declare(
         googlebenchmark
         URL https://github.com/google/benchmark/archive/refs/tags/v1.8.3.zip
+        DOWNLOAD_EXTRACT_TIMESTAMP TRUE
     )
     FetchContent_MakeAvailable(googlebenchmark)
 

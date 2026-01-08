@@ -43,7 +43,7 @@ namespace {
 // --- Device Structures (Structure of Arrays) ---
 
 // Holds state only for LOCAL neurons owned by this rank
-struct LocalNeuronData {
+struct DeviceNeuronData {
     int* current_spikes = nullptr;     // C(k)
     int* initial_spikes = nullptr;     // C(0)
     bool* is_open = nullptr;           // Status vector St(k)
@@ -72,7 +72,7 @@ struct LocalNeuronData {
 };
 
 // Holds rules associated with LOCAL neurons
-struct LocalRuleData {
+struct DeviceRuleData {
     int* neuron_local_idx = nullptr;   // Index relative to local partition (0 to local_count-1)
     int* threshold = nullptr;
     int* consumed = nullptr;
@@ -118,7 +118,7 @@ struct LocalRuleData {
 };
 
 // Fully Replicated Synapse List (Optimization: All ranks have all synapses)
-struct GlobalSynapseData {
+struct DeviceSynapseData {
     int* source_global_id = nullptr;
     int* dest_global_id = nullptr;
     int* weight = nullptr;
@@ -150,9 +150,9 @@ struct GlobalSynapseData {
  * 3. Applies rules (Deterministic: first valid rule).
  * 4. Writes total output to `local_production_out`.
  */
-__global__ void kLocalComputeAndProduce(
-    LocalNeuronData neurons,
-    LocalRuleData rules,
+__global__ void updateNeuronDynamicsKernel(
+    DeviceNeuronData neurons,
+    DeviceRuleData rules,
     int* local_production_out // Output: Size [local_neuron_count]
 ) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
@@ -210,9 +210,9 @@ __global__ void kLocalComputeAndProduce(
  * If synapse.source fired (checked via global_production buffer) AND synapse.dest is on this rank:
  * Add spikes to the local neuron.
  */
-__global__ void kDistributeGlobalSpikes(
-    GlobalSynapseData synapses,
-    LocalNeuronData neurons,
+__global__ void propagateSpikesKernel(
+    DeviceSynapseData synapses,
+    DeviceNeuronData neurons,
     const int* __restrict__ global_production_buffer, // Input: Size [total_neurons]
     int my_rank_start_id,
     int my_rank_end_id
@@ -242,7 +242,7 @@ __global__ void kDistributeGlobalSpikes(
     }
 }
 
-__global__ void kResetLocalNeurons(LocalNeuronData neurons) {
+__global__ void resetNeuronsKernel(DeviceNeuronData neurons) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= neurons.count) return;
     
@@ -267,12 +267,12 @@ private:
     int my_neuron_count;
 
     // Local Data (Device)
-    LocalNeuronData d_local_neurons;
-    LocalRuleData d_local_rules;
+    DeviceNeuronData d_local_neurons;
+    DeviceRuleData d_local_rules;
     int* d_local_production; // Output of phase 1
     
     // Global Data (Device)
-    GlobalSynapseData d_synapses;
+    DeviceSynapseData d_synapses;
     int* d_global_production; // Input for phase 2 (replicated)
 
     // Host Buffers for MPI
@@ -398,7 +398,7 @@ public:
             // --- Phase 1: Local Compute ---
             if (my_neuron_count > 0) {
                 int grid = (static_cast<size_t>(my_neuron_count) + BLOCK_SIZE - 1) / BLOCK_SIZE;
-                kLocalComputeAndProduce<<<grid, BLOCK_SIZE>>>(
+                updateNeuronDynamicsKernel<<<grid, BLOCK_SIZE>>>(
                     d_local_neurons, d_local_rules, d_local_production
                 );
                 CUDA_CHECK(cudaGetLastError());
@@ -433,7 +433,7 @@ public:
             // Iterate synapses. If source fired (check d_global_production) and dest is mine, update mine.
             if (d_synapses.count > 0) {
                 int grid = (static_cast<size_t>(d_synapses.count) + BLOCK_SIZE - 1) / BLOCK_SIZE;
-                kDistributeGlobalSpikes<<<grid, BLOCK_SIZE>>>(
+                propagateSpikesKernel<<<grid, BLOCK_SIZE>>>(
                     d_synapses, d_local_neurons, d_global_production,
                     my_start_id, my_end_id
                 );
@@ -492,7 +492,7 @@ public:
     void reset() override {
         if (my_neuron_count > 0) {
             int grid = (static_cast<size_t>(my_neuron_count) + BLOCK_SIZE - 1) / BLOCK_SIZE;
-            kResetLocalNeurons<<<grid, BLOCK_SIZE>>>(d_local_neurons);
+            resetNeuronsKernel<<<grid, BLOCK_SIZE>>>(d_local_neurons);
             CUDA_CHECK(cudaDeviceSynchronize());
         }
         compute_time_ms = 0;

@@ -15,8 +15,8 @@ mkdir -p "$OUTPUT_DIR"
 
 HOSTS=(
     "localhost"
-    "10.0.0.2"
-    "10.0.1.2"
+    "10.0.0.3"
+    "10.0.1.3"
 )
 
 # Defaults
@@ -56,8 +56,13 @@ relevant_ncu_metrics=(
     "smsp__warp_issue_stalled_wait_per_warp_active.pct"
     "smsp__warp_issue_stalled_membar_per_warp_active.pct"
     "smsp__warp_issue_stalled_mio_throttle_per_warp_active.pct"
+    "smsp__warp_issue_stalled_no_instruction_per_warp_active.pct"
+    "smsp__warp_issue_stalled_math_pipe_throttle_per_warp_active.pct"
+    "smsp__warp_issue_stalled_lg_throttle_per_warp_active.pct"
+    "smsp__warp_issue_stalled_branch_resolving_per_warp_active.pct"
     "l1tex__t_bytes_lookup_hit.sum" "l1tex__t_bytes_lookup_miss.sum"
-    "dram__bytes_read.sum" "dram__bytes_write.sum"
+    "dram__bytes_read.sum"
+    "dram__bytes_write.sum"
 )
 
 log_step() { echo -e "${BLUE}▶${NC} $1"; }
@@ -198,11 +203,11 @@ run_mpi_profiler() {
     # Build profiler command
     local profiler_cmd=""
     if [ "$tool" == "nsys" ]; then
-        profiler_cmd="/usr/local/cuda/bin/nsys profile --capture-range=cudaProfilerApi --cpuctxsw=system-wide \
+        profiler_cmd="/usr/local/cuda/bin/nsys profile --capture-range=cudaProfilerApi \
             --trace=cuda,mpi,nvtx,osrt --output=$output \
             --force-overwrite=true $NSYS_OPTS"
     else
-        local ncu_opts="${NCU_OPTS:---section SpeedOfLight --section MemoryWorkloadAnalysis --section Occupancy --call-stack --launch-count 20} --metrics $(IFS=, ; echo "${relevant_ncu_metrics[*]}")"
+        local ncu_opts="${NCU_OPTS} --metrics $(IFS=, ; echo "${relevant_ncu_metrics[*]}")"
         profiler_cmd="/usr/local/cuda/bin/ncu $ncu_opts --export $output --force-overwrite --lockstep-kernel-launch"
     fi
     
@@ -221,8 +226,9 @@ run_mpi_profiler() {
         done
         # Suppress MPI error messages when process exits during cleanup
         local mpi_cmd="mpirun -np ${#HOSTS[@]} --host $(IFS=, ; echo "${HOSTS[*]}") \
-            --mca btl_tcp_if_include ens5 --mca oob_tcp_if_include ens5"
-        eval "$mpi_cmd $profiler_cmd $app_cmd"
+            --mca btl_tcp_if_include ens5 --mca oob_tcp_if_include ens5 \
+            --mca orte_abort_on_non_zero_status 0"
+        eval "$mpi_cmd $profiler_cmd $app_cmd" || true
     else
         eval "$profiler_cmd $app_cmd" 2>&1 | grep -v "^Collecting\|^==" || true
     fi

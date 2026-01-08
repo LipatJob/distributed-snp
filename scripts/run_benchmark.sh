@@ -14,7 +14,7 @@ OUTPUT_DIR="${PROJECT_ROOT}/benchmark/results"
 HOSTFILE="${PROJECT_ROOT}/hostfile.txt"
 BUILD_DIR="/home/shared/tmp/distributed-snp-new"
 BENCHMARK_EXEC="${BUILD_DIR}/bin/sort_benchmark"
-HOSTS="localhost,10.0.0.2,10.0.1.2"
+HOSTS="localhost,10.0.0.3,10.0.1.3"
 
 mkdir -p "$OUTPUT_DIR"
 

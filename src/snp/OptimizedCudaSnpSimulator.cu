@@ -122,7 +122,7 @@ struct DeviceSynapseData {
  * 5. Output scheduling (immediate or delayed)
  * * Writes total spikes to emit this step into `current_output`.
  */
-static __global__ void neuronDynamicsKernel(
+static __global__ void updateNeuronDynamicsKernel(
     DeviceNeuronData neurons,
     const int* __restrict__ rule_start_idx,
     const int* __restrict__ rule_count,
@@ -197,7 +197,7 @@ static __global__ void neuronDynamicsKernel(
  * * Reads `current_output` from source neurons and adds to destination.
  * Handles both immediate firings and delayed emissions that just matured.
  */
-static __global__ void synapseTransferKernel(
+static __global__ void propagateSpikesKernel(
     const int* __restrict__ output_spikes, // Read from neurons.current_output
     int* __restrict__ neuron_config,       // Write to neurons.configuration
     const int* __restrict__ src_ids,
@@ -221,7 +221,7 @@ static __global__ void synapseTransferKernel(
     }
 }
 
-static __global__ void resetKernel(DeviceNeuronData neurons) {
+static __global__ void resetNeuronsKernel(DeviceNeuronData neurons) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= neurons.num_neurons) return;
     
@@ -295,7 +295,7 @@ public:
         
         for (int i = 0; i < steps; ++i) {
             // Kernel 1: Neuron Logic (Update, Fire, Generate Output)
-            neuronDynamicsKernel<<<neuron_grid, BLOCK_SIZE>>>(
+            updateNeuronDynamicsKernel<<<neuron_grid, BLOCK_SIZE>>>(
                 d_neurons,
                 d_rules.rule_start_idx,
                 d_rules.rule_count,
@@ -309,7 +309,7 @@ public:
             if (num_synapses > 0) {
                 // Ensure Neuron logic is done before propagating
                 // (Implicit serialization in stream 0, but good for clarity)
-                synapseTransferKernel<<<synapse_grid, BLOCK_SIZE>>>(
+                propagateSpikesKernel<<<synapse_grid, BLOCK_SIZE>>>(
                     d_neurons.current_output,
                     d_neurons.configuration,
                     d_synapses.source_id,
@@ -342,7 +342,7 @@ public:
     
     void reset() override {
         if (num_neurons == 0) return;
-        resetKernel<<<neuron_grid, BLOCK_SIZE>>>(d_neurons);
+        resetNeuronsKernel<<<neuron_grid, BLOCK_SIZE>>>(d_neurons);
         CUDA_CHECK(cudaDeviceSynchronize());
         steps_executed = 0;
         total_compute_time_ms = 0.0;

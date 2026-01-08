@@ -97,6 +97,9 @@ void profileImplementation(const ProfileConfig& config, int rank, int worldSize)
     }
     cudaProfilerStop();
 
+    // Generate performance report (may involve MPI collectives, so all ranks must call it)
+    std::string perfReport = simPtr->getPerformanceReport();
+
     // Report on rank 0
     if (rank == 0) {
         if (!results.empty()) {
@@ -106,7 +109,6 @@ void profileImplementation(const ProfileConfig& config, int rank, int worldSize)
         }
         
         // Print performance report
-        std::string perfReport = simPtr->getPerformanceReport();
         std::cout << "\n" << perfReport << "\n";
     }
 }

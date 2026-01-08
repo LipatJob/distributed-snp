@@ -102,7 +102,7 @@ struct DeviceSynapseMatrix {
 /**
  * @brief Simulation State Vectors
  */
-struct DeviceState {
+struct DeviceNeuronData {
     int* config_vector;     // C_k: spikes per neuron
     int* delay_vector;      // D_k: remaining delay
     int* spiking_vector;    // S_k: Index of active rule per neuron (-1 if none)
@@ -135,7 +135,7 @@ struct DeviceState {
  * If a rule is applicable, its index is stored in S_k[nid].
  * Deterministic: First applicable rule wins.
  */
-__global__ void k_calc_spiking_vector(
+__global__ void computeSpikingVectorKernel(
     int num_neurons,
     const int* __restrict__ config,      // C_k
     const int* __restrict__ delay,       // D_k
@@ -176,7 +176,7 @@ __global__ void k_calc_spiking_vector(
  * 2. Sets delays.
  * 3. Iterates Synapse Matrix (Sy_Pi) to distribute produced spikes.
  */
-__global__ void k_step_compressed(
+__global__ void consumeSpikesAndProduceKernel(
     int num_neurons,
     int max_out_degree,
     int* config,                     // C_k (Read/Write)
@@ -234,7 +234,7 @@ __global__ void k_step_compressed(
  * Decrements delay counters for closed neurons.
  * When delay reaches 0, sends pending emissions.
  */
-__global__ void k_update_delays(
+__global__ void updateDelaysAndEmitKernel(
     int num_neurons,
     int max_out_degree,
     int* delay_vector,
@@ -274,7 +274,7 @@ __global__ void k_update_delays(
 /**
  * @brief Kernel: Reset
  */
-__global__ void k_reset_state(
+__global__ void resetNeuronsKernel(
     int num_neurons,
     int* config,
     const int* initial_config,
@@ -301,7 +301,7 @@ private:
     int max_out_degree = 0; // Z
 
     // Device Memory Wrappers
-    DeviceState d_state;
+    DeviceNeuronData d_state;
     DeviceRuleVector d_rv;
     DeviceNeuronRuleMap d_map;
     DeviceSynapseMatrix d_sy;
@@ -439,7 +439,7 @@ public:
 
             // 1. Update Delays and Emit Pending Spikes (from previous step)
             // This must happen FIRST so neurons can open and pending spikes can be sent
-            k_update_delays<<<grid_size, BLOCK_SIZE>>>(
+            updateDelaysAndEmitKernel<<<grid_size, BLOCK_SIZE>>>(
                 num_neurons,
                 max_out_degree,
                 d_state.delay_vector,
@@ -452,7 +452,7 @@ public:
 
             // 2. Calculate Spiking Vector (Determine active rules)
             // Only open neurons (delay==0) can fire
-            k_calc_spiking_vector<<<grid_size, BLOCK_SIZE>>>(
+            computeSpikingVectorKernel<<<grid_size, BLOCK_SIZE>>>(
                 num_neurons,
                 d_state.config_vector,
                 d_state.delay_vector,
@@ -464,7 +464,7 @@ public:
             CUDA_CHECK(cudaGetLastError());
 
             // 3. Perform Transition (Consume, Produce via Sy_Pi, Set Delays)
-            k_step_compressed<<<grid_size, BLOCK_SIZE>>>(
+            consumeSpikesAndProduceKernel<<<grid_size, BLOCK_SIZE>>>(
                 num_neurons,
                 max_out_degree,
                 d_state.config_vector,
@@ -495,7 +495,7 @@ public:
     }
 
     void reset() override {
-        k_reset_state<<<grid_size, BLOCK_SIZE>>>(
+        resetNeuronsKernel<<<grid_size, BLOCK_SIZE>>>(
             num_neurons,
             d_state.config_vector,
             d_state.initial_config,

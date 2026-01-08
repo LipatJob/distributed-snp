@@ -45,7 +45,7 @@ namespace {
 // --- Device Structures ---
 
 // Local Neuron State (SoA)
-struct OptimizedCudaSnpSimulator {
+struct DeviceNeuronData {
     int* configuration;       // Current spike count
     int* initial_config;      // For reset
     char* is_open;            // Status (using char for byte alignment)
@@ -187,7 +187,7 @@ struct DeviceImportMapData {
 
 // 3. Propagate Spikes (Local Only)
 // Handles both immediate production and pending emissions that just unlocked
-__global__ void kPropagateLocal(OptimizedCudaSnpSimulator neurons, DeviceLocalSynapseData synapses) {
+__global__ void propagateLocalSpikesKernel(DeviceNeuronData neurons, DeviceLocalSynapseData synapses) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= synapses.count) return;
 
@@ -212,7 +212,7 @@ __global__ void kPropagateLocal(OptimizedCudaSnpSimulator neurons, DeviceLocalSy
 }
 
 // 4. Populate Export Buffer (For Remote Targets)
-__global__ void kPopulateExport(OptimizedCudaSnpSimulator neurons, DeviceExportSynapseData synapses, int* export_buffer) {
+__global__ void populateExportBufferKernel(DeviceNeuronData neurons, DeviceExportSynapseData synapses, int* export_buffer) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= synapses.count) return;
 
@@ -233,7 +233,7 @@ __global__ void kPopulateExport(OptimizedCudaSnpSimulator neurons, DeviceExportS
 }
 
 // 5. Apply Imported Spikes (From Other Ranks)
-__global__ void kApplyImports(OptimizedCudaSnpSimulator neurons, DeviceImportMapData imports, int* import_buffer) {
+__global__ void applyImportedSpikesKernel(DeviceNeuronData neurons, DeviceImportMapData imports, int* import_buffer) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= imports.count) return;
 
@@ -251,7 +251,7 @@ __global__ void kApplyImports(OptimizedCudaSnpSimulator neurons, DeviceImportMap
 
 // 7. Fused kernel: UpdateStatus + SelectAndFire + Cleanup
 // This reduces kernel launch overhead by combining three operations
-__global__ void kUpdateSelectFireCleanup(OptimizedCudaSnpSimulator neurons, DeviceRuleData rules) {
+__global__ void updateNeuronDynamicsKernel(DeviceNeuronData neurons, DeviceRuleData rules) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= neurons.count) return;
 
@@ -288,7 +288,7 @@ __global__ void kUpdateSelectFireCleanup(OptimizedCudaSnpSimulator neurons, Devi
 }
 
 // 8. Separate cleanup kernel for after propagation
-__global__ void kCleanupAfterPropagation(OptimizedCudaSnpSimulator neurons) {
+__global__ void clearSpikeProductionKernel(DeviceNeuronData neurons) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= neurons.count) return;
 
@@ -298,7 +298,7 @@ __global__ void kCleanupAfterPropagation(OptimizedCudaSnpSimulator neurons) {
     }
 }
 
-__global__ void kResetNeurons(OptimizedCudaSnpSimulator neurons) {
+__global__ void resetNeuronsKernel(DeviceNeuronData neurons) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= neurons.count) return;
     neurons.configuration[idx] = neurons.initial_config[idx];
@@ -327,7 +327,7 @@ private:
     std::vector<int> rank_counts;
 
     // Device Data
-    OptimizedCudaSnpSimulator d_neurons;
+    DeviceNeuronData d_neurons;
     DeviceRuleData d_rules;
     DeviceLocalSynapseData d_local_synapses;
     DeviceExportSynapseData d_export_synapses;
@@ -486,15 +486,15 @@ public:
 
                 // OPTIMIZATION: Use fused kernel to reduce launch overhead
                 // This combines UpdateStatus + SelectAndFire in one kernel
-                kUpdateSelectFireCleanup<<<gridSize, BLOCK_SIZE, 0, compute_stream>>>(d_neurons, d_rules);
+                updateNeuronDynamicsKernel<<<gridSize, BLOCK_SIZE, 0, compute_stream>>>(d_neurons, d_rules);
                 
                 // Propagate spikes locally and to export buffers (can run in parallel conceptually)
                 if (d_local_synapses.count > 0) {
-                    kPropagateLocal<<<synapseGridSize, BLOCK_SIZE, 0, compute_stream>>>(d_neurons, d_local_synapses);
+                    propagateLocalSpikesKernel<<<synapseGridSize, BLOCK_SIZE, 0, compute_stream>>>(d_neurons, d_local_synapses);
                 }
                 
                 if (d_export_synapses.count > 0) {
-                    kPopulateExport<<<exportGridSize, BLOCK_SIZE, 0, compute_stream>>>(d_neurons, d_export_synapses, d_export_buffer);
+                    populateExportBufferKernel<<<exportGridSize, BLOCK_SIZE, 0, compute_stream>>>(d_neurons, d_export_synapses, d_export_buffer);
                 }
             }
             
@@ -587,10 +587,10 @@ public:
             // --- Phase 3: Apply Imports & Cleanup (Device) ---
             if (local_num_neurons > 0) {
                 if (d_import_map.count > 0) {
-                    kApplyImports<<<importGridSize, BLOCK_SIZE, 0, compute_stream>>>(d_neurons, d_import_map, d_import_buffer);
+                    applyImportedSpikesKernel<<<importGridSize, BLOCK_SIZE, 0, compute_stream>>>(d_neurons, d_import_map, d_import_buffer);
                 }
                 // Final cleanup of spike production and pending emissions
-                kCleanupAfterPropagation<<<gridSize, BLOCK_SIZE, 0, compute_stream>>>(d_neurons);
+                clearSpikeProductionKernel<<<gridSize, BLOCK_SIZE, 0, compute_stream>>>(d_neurons);
             }
             // Final sync for this step
             CUDA_CHECK(cudaStreamSynchronize(compute_stream));
@@ -642,7 +642,7 @@ public:
     void reset() override {
         int gridSize = (local_num_neurons + BLOCK_SIZE - 1) / BLOCK_SIZE;
         if (gridSize > 0) {
-            kResetNeurons<<<gridSize, BLOCK_SIZE>>>(d_neurons);
+            resetNeuronsKernel<<<gridSize, BLOCK_SIZE>>>(d_neurons);
             CUDA_CHECK(cudaDeviceSynchronize());
         }
         compute_time = 0;

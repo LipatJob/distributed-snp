@@ -66,8 +66,8 @@ echo ""
 # Setup profiling permissions
 log_step "Configuring profiling permissions"
 sudo sysctl -q kernel.perf_event_paranoid=1
-ssh shared@10.0.0.2 "sudo sysctl -q kernel.perf_event_paranoid=1" 2>/dev/null || log_info "Remote node unavailable, skipping"
-ssh shared@10.0.1.2 "sudo sysctl -q kernel.perf_event_paranoid=1" 2>/dev/null || log_info "Remote node unavailable, skipping"
+ssh shared@10.0.0.3 "sudo sysctl -q kernel.perf_event_paranoid=1" 2>/dev/null || log_info "Remote node unavailable, skipping"
+ssh shared@10.0.1.3 "sudo sysctl -q kernel.perf_event_paranoid=1" 2>/dev/null || log_info "Remote node unavailable, skipping"
 log_success "Profiling setup complete"
 echo ""
 
@@ -96,7 +96,7 @@ implementations=(
     "naive-cuda-mpi:linear"
     "optimized-cuda-mpi:linear"
 )
-make profile ARGS="-s 3 -p ncu -i $(IFS=,; echo "${implementations[*]}")" && sleep 1
+make profile ARGS="-s 16 -p ncu -i $(IFS=,; echo "${implementations[*]}")" && sleep 1
 log_success "Nsight Compute profiling complete"
 
 echo ""
