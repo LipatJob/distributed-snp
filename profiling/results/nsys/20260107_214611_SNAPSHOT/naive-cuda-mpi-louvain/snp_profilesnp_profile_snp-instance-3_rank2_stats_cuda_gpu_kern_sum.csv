@@ -1,0 +1,2 @@
+Time (%),Total Time (ns),Instances,Avg (ns),Med (ns),Min (ns),Max (ns),StdDev (ns),Name
+100.0,600993161,2050,293167.4,292977.0,258496,328769,20028.7,"<unnamed>::kDistributeGlobalSpikes(<unnamed>::GlobalSynapseData, <unnamed>::LocalNeuronData, const int *, int, int)"

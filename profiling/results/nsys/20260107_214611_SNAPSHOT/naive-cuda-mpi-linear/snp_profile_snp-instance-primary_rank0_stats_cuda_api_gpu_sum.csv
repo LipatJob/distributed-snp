@@ -1,0 +1,12 @@
+Time (%),Total Time (ns),Instances,Avg (ns),Med (ns),Min (ns),Max (ns),StdDev (ns),Category,Operation
+45.5,624656712,4100,152355.3,63772.0,2083,3274334,161696.6,CUDA_API,cudaDeviceSynchronize
+43.8,600915648,2050,293129.6,293207.5,258361,328535,20050.2,CUDA_KERNEL,"<unnamed>::kDistributeGlobalSpikes(<unnamed>::GlobalSynapseData, <unnamed>::LocalNeuronData, const int *, int, int)"
+6.4,88421640,4101,21561.0,18931.0,9964,3851150,84139.9,CUDA_API,cudaMemcpy
+2.2,30799471,4100,7512.1,7014.0,4086,241130,5132.8,CUDA_API,cudaLaunchKernel
+1.1,14482517,2050,7064.6,7072.0,5760,7328,82.4,CUDA_KERNEL,"<unnamed>::kLocalComputeAndProduce(<unnamed>::LocalNeuronData, <unnamed>::LocalRuleData, int *)"
+0.6,8333686,2050,4065.2,4032.0,3711,15423,378.7,MEMORY_OPER,[CUDA memcpy Host-to-Device]
+0.3,4553071,2051,2219.9,2208.0,2175,9216,177.0,MEMORY_OPER,[CUDA memcpy Device-to-Host]
+0.1,985295,4100,240.3,208.0,122,76685,1210.7,CUDA_API,cuKernelGetName
+0.0,205088,1,205088.0,205088.0,205088,205088,0.0,CUDA_API,cuLibraryLoadData
+0.0,50118,1,50118.0,50118.0,50118,50118,0.0,CUDA_API,cuProfilerStart
+0.0,2997,2,1498.5,1498.5,1111,1886,548.0,CUDA_API,cuLibraryGetKernel

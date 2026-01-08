@@ -1,0 +1,9 @@
+Time (%),Total Time (ns),Instances,Avg (ns),Med (ns),Min (ns),Max (ns),StdDev (ns),Category,Operation
+74.2,556380664,2050,271405.2,271870.0,8064,538940,152495.5,CUDA_KERNEL,"<unnamed>::kUpdateSelectFireCleanup(<unnamed>::OptimizedCudaSnpSimulator, <unnamed>::DeviceRuleData)"
+20.1,150696529,2050,73510.5,73508.0,71779,75876,738.9,CUDA_KERNEL,"<unnamed>::kPropagateLocal(<unnamed>::OptimizedCudaSnpSimulator, <unnamed>::DeviceLocalSynapseData)"
+2.5,18764525,2050,9153.4,9152.0,8801,9697,131.4,CUDA_KERNEL,"<unnamed>::kPopulateExport(<unnamed>::OptimizedCudaSnpSimulator, <unnamed>::DeviceExportSynapseData, int *)"
+1.4,10319043,2050,5033.7,5088.0,3456,5441,129.8,CUDA_KERNEL,"<unnamed>::kApplyImports(<unnamed>::OptimizedCudaSnpSimulator, <unnamed>::DeviceImportMapData, int *)"
+0.8,6169560,2050,3009.5,3008.0,2912,3200,40.4,CUDA_KERNEL,<unnamed>::kCleanupAfterPropagation(<unnamed>::OptimizedCudaSnpSimulator)
+0.5,3823600,2051,1864.3,1920.0,1696,3136,103.6,MEMORY_OPER,[CUDA memcpy Device-to-Host]
+0.4,2706155,2050,1320.1,1344.0,1248,1376,33.9,MEMORY_OPER,[CUDA memcpy Host-to-Device]
+0.2,1440635,2050,702.7,704.0,672,1152,13.7,MEMORY_OPER,[CUDA memset]

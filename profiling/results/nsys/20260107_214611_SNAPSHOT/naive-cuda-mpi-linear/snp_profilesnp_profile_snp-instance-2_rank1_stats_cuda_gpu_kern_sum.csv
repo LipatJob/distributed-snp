@@ -1,0 +1,3 @@
+Time (%),Total Time (ns),Instances,Avg (ns),Med (ns),Min (ns),Max (ns),StdDev (ns),Name
+57.4,971396550,2050,473852.0,475339.0,10657,936022,267280.5,"<unnamed>::kLocalComputeAndProduce(<unnamed>::LocalNeuronData, <unnamed>::LocalRuleData, int *)"
+42.6,719882946,2050,351162.4,351284.0,258351,443033,52717.4,"<unnamed>::kDistributeGlobalSpikes(<unnamed>::GlobalSynapseData, <unnamed>::LocalNeuronData, const int *, int, int)"

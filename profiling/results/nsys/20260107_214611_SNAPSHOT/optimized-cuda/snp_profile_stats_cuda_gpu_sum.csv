@@ -1,0 +1,4 @@
+Time (%),Total Time (ns),Instances,Avg (ns),Med (ns),Min (ns),Max (ns),StdDev (ns),Category,Operation
+60.5,1015123359,2050,495182.1,497730.0,10144,1000004,280560.3,CUDA_KERNEL,"neuronDynamicsKernel(DeviceNeuronData, const int *, const int *, const int *, const int *, const int *, const int *)"
+39.5,662606876,2050,323222.9,323399.0,259225,385910,36307.0,CUDA_KERNEL,"synapseTransferKernel(const int *, int *, const int *, const int *, const int *, int)"
+0.0,4000,1,4000.0,4000.0,4000,4000,0.0,MEMORY_OPER,[CUDA memcpy Device-to-Host]

@@ -1,0 +1,11 @@
+Time (%),Total Time (ns),Instances,Avg (ns),Med (ns),Min (ns),Max (ns),StdDev (ns),Category,Operation
+32.5,1094557960,4100,266965.4,302615.0,3618,6979174,344024.0,CUDA_API,cudaLaunchKernel
+30.1,1015123359,2050,495182.1,497730.0,10144,1000004,280560.3,CUDA_KERNEL,"neuronDynamicsKernel(DeviceNeuronData, const int *, const int *, const int *, const int *, const int *, const int *)"
+19.7,662606876,2050,323222.9,323399.0,259225,385910,36307.0,CUDA_KERNEL,"synapseTransferKernel(const int *, int *, const int *, const int *, const int *, int)"
+17.7,596957257,1,596957257.0,596957257.0,596957257,596957257,0.0,CUDA_API,cudaDeviceSynchronize
+0.0,655096,4100,159.8,143.0,119,11842,194.1,CUDA_API,cuKernelGetName
+0.0,213271,1,213271.0,213271.0,213271,213271,0.0,CUDA_API,cuLibraryLoadData
+0.0,44585,1,44585.0,44585.0,44585,44585,0.0,CUDA_API,cudaMemcpy
+0.0,13080,1,13080.0,13080.0,13080,13080,0.0,CUDA_API,cuProfilerStart
+0.0,4000,1,4000.0,4000.0,4000,4000,0.0,MEMORY_OPER,[CUDA memcpy Device-to-Host]
+0.0,1110,2,555.0,555.0,541,569,19.8,CUDA_API,cuLibraryGetKernel

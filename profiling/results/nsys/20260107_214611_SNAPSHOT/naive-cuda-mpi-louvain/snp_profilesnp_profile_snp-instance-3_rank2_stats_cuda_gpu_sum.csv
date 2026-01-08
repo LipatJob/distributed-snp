@@ -1,0 +1,3 @@
+Time (%),Total Time (ns),Instances,Avg (ns),Med (ns),Min (ns),Max (ns),StdDev (ns),Category,Operation
+98.6,600993161,2050,293167.4,292977.0,258496,328769,20028.7,CUDA_KERNEL,"<unnamed>::kDistributeGlobalSpikes(<unnamed>::GlobalSynapseData, <unnamed>::LocalNeuronData, const int *, int, int)"
+1.4,8299863,2050,4048.7,4032.0,3680,17568,665.7,MEMORY_OPER,[CUDA memcpy Host-to-Device]

@@ -1,0 +1,3 @@
+Time (%),Total Time (ns),Instances,Avg (ns),Med (ns),Min (ns),Max (ns),StdDev (ns),Category,Operation
+99.8,6042402,4100,1473.8,1428.0,1390,22906,612.9,CUDA_API,cudaStreamSynchronize
+0.2,10758,1,10758.0,10758.0,10758,10758,0.0,CUDA_API,cuProfilerStart

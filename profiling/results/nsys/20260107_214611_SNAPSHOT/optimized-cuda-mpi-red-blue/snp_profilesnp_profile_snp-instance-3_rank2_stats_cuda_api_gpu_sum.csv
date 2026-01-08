@@ -1,0 +1,14 @@
+Time (%),Total Time (ns),Instances,Avg (ns),Med (ns),Min (ns),Max (ns),StdDev (ns),Category,Operation
+34.5,47114201,6150,7660.8,7667.0,1872,141092,2417.6,CUDA_API,cudaStreamSynchronize
+25.8,35264416,6150,5734.1,4964.0,3804,166653,3248.4,CUDA_API,cudaLaunchKernel
+18.1,24810974,4100,6051.5,5801.0,2855,491462,8614.1,CUDA_API,cudaMemcpyAsync
+6.0,8180807,2050,3990.6,4000.0,2944,4096,50.3,CUDA_KERNEL,"<unnamed>::kApplyImports(<unnamed>::OptimizedCudaSnpSimulator, <unnamed>::DeviceImportMapData, int *)"
+5.3,7295847,2050,3558.9,3552.0,3488,4128,25.5,CUDA_KERNEL,"<unnamed>::kUpdateSelectFireCleanup(<unnamed>::OptimizedCudaSnpSimulator, <unnamed>::DeviceRuleData)"
+5.2,7141545,4100,1741.8,1376.0,672,15744,537.6,MEMORY_OPER,[CUDA memcpy Host-to-Device]
+4.2,5760514,2050,2810.0,2816.0,2752,2944,24.4,CUDA_KERNEL,<unnamed>::kCleanupAfterPropagation(<unnamed>::OptimizedCudaSnpSimulator)
+0.7,982595,6150,159.8,140.0,107,13663,241.5,CUDA_API,cuKernelGetName
+0.1,140263,1,140263.0,140263.0,140263,140263,0.0,CUDA_API,cuLibraryLoadData
+0.0,28976,1,28976.0,28976.0,28976,28976,0.0,CUDA_API,cudaMemcpy
+0.0,13546,1,13546.0,13546.0,13546,13546,0.0,CUDA_API,cuProfilerStart
+0.0,3450,3,1150.0,826.0,624,2000,743.0,CUDA_API,cuLibraryGetKernel
+0.0,2592,1,2592.0,2592.0,2592,2592,0.0,MEMORY_OPER,[CUDA memcpy Device-to-Host]

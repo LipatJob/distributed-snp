@@ -1,0 +1,6 @@
+Time (%),Total Time (ns),Instances,Avg (ns),Med (ns),Min (ns),Max (ns),StdDev (ns),Name
+54.3,540185457,2050,263505.1,263549.0,243084,283822,11107.8,"<unnamed>::kPopulateExport(<unnamed>::OptimizedCudaSnpSimulator, <unnamed>::DeviceExportSynapseData, int *)"
+42.8,425591169,2050,207605.4,207754.5,7424,407764,115764.3,"<unnamed>::kUpdateSelectFireCleanup(<unnamed>::OptimizedCudaSnpSimulator, <unnamed>::DeviceRuleData)"
+1.2,11494224,2050,5606.9,5600.0,3713,7328,826.4,"<unnamed>::kPropagateLocal(<unnamed>::OptimizedCudaSnpSimulator, <unnamed>::DeviceLocalSynapseData)"
+1.0,10232551,2050,4991.5,4992.0,3520,5153,67.8,"<unnamed>::kApplyImports(<unnamed>::OptimizedCudaSnpSimulator, <unnamed>::DeviceImportMapData, int *)"
+0.7,6792559,2050,3313.4,3297.0,3264,3553,33.9,<unnamed>::kCleanupAfterPropagation(<unnamed>::OptimizedCudaSnpSimulator)

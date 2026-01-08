@@ -1,1 +1,7 @@
-results/
+results/ncu/*
+!results/ncu/*_SNAPSHOT/
+!results/ncu/*_SNAPSHOT/*
+
+results/nsys/*
+!results/nsys/*_SNAPSHOT/
+!results/nsys/*_SNAPSHOT/*

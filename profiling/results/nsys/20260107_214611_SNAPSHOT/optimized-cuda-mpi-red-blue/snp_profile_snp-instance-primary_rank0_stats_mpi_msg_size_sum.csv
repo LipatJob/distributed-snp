@@ -1,0 +1,7 @@
+Total Message Volume,Instances,Avg,Med,Min,Max,StdDev,Source,Name
+16801800,4100,4098.0,4098.0,4,8192,4094.5,p2p,MPI_Isend
+16785400,2050,8188.0,8188.0,8188,8188,0.0,p2p,MPI_Irecv
+12,1,12.0,12.0,12,12,0.0,coll_recv,MPI_Allgather
+24576,1,24576.0,24576.0,24576,24576,0.0,coll_recv,MPI_Allgatherv
+12,1,12.0,12.0,12,12,0.0,coll_send,MPI_Allgather
+24576,1,24576.0,24576.0,24576,24576,0.0,coll_send,MPI_Allgatherv

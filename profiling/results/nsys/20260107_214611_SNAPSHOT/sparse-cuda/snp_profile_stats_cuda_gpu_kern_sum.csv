@@ -1,0 +1,4 @@
+Time (%),Total Time (ns),Instances,Avg (ns),Med (ns),Min (ns),Max (ns),StdDev (ns),Name
+93.0,7993120345,2050,3899083.1,3799110.0,3520,4778011,309209.6,"k_step_compressed(int, int, int *, int *, int *, const int *, const int *, const int *, const int *, const int *, const int *)"
+6.9,594260848,2050,289883.3,290040.0,6176,572368,163613.0,"k_calc_spiking_vector(int, const int *, const int *, int *, const int *, const int *, const int *)"
+0.1,6630881,2050,3234.6,3232.0,3072,3424,35.9,"k_update_delays(int, int, int *, int *, int *, const int *, const int *)"

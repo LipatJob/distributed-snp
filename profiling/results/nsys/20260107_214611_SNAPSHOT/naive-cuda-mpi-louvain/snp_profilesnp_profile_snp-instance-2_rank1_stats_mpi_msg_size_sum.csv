@@ -1,0 +1,5 @@
+Total Message Volume,Instances,Avg,Med,Min,Max,StdDev,Source,Name
+50380800,2050,24576.0,24576.0,24576,24576,0.0,coll_recv,MPI_Allgatherv
+66149400,2050,32268.0,32268.0,32268,32268,0.0,coll_send,MPI_Allgatherv
+24576,1,24576.0,24576.0,24576,24576,0.0,coll_recv,MPI_Bcast
+10756,1,10756.0,10756.0,10756,10756,0.0,coll_send,MPI_Gatherv

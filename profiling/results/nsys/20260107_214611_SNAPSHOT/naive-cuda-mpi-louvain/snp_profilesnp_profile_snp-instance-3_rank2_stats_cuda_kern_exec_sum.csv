@@ -1,0 +1,2 @@
+PID,TID,DevId,Count,QCount,TAvg (ns),TMed (ns),TMin (ns),TMax (ns),TStdDev (ns),AAvg (ns),AMed (ns),AMin (ns),AMax (ns),AStdDev (ns),QAvg (ns),QMed (ns),QMin (ns),QMax (ns),QStdDev (ns),KAvg (ns),KMed (ns),KMin (ns),KMax (ns),KStdDev (ns),API Name,Kernel Name
+6636,6636,0,2050,1975,303617.3,303341.0,267511,479671,20814.9,9101.3,7955.0,6277,151884,4724.1,1561.9,1557.0,583,2514,163.6,293167.4,292977.0,258496,328769,20028.7,cudaLaunchKernel,"<unnamed>::kDistributeGlobalSpikes(<unnamed>::GlobalSynapseData, <unnamed>::LocalNeuronData, const int *, int, int)"
