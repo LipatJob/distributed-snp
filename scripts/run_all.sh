@@ -39,7 +39,7 @@ implementations=(
 suites=(
     distributions
 )
-# make benchmark ARGS="--impls=$(IFS=,; echo "${implementations[*]}") --suites=$(IFS=,; echo "${suites[*]}")"
+make benchmark ARGS="--impls=$(IFS=,; echo "${implementations[*]}") --suites=$(IFS=,; echo "${suites[*]}")"
 log_success "Distributions Benchmarks complete"   
 echo ""
 
@@ -59,7 +59,7 @@ implementations=(
 suites=(
     scaling
 )
-# make benchmark ARGS="--impls=$(IFS=,; echo "${implementations[*]}") --suites=$(IFS=,; echo "${suites[*]}")"
+make benchmark ARGS="--impls=$(IFS=,; echo "${implementations[*]}") --suites=$(IFS=,; echo "${suites[*]}")"
 log_success "Scaling Benchmarks complete"   
 echo ""
 
@@ -84,7 +84,7 @@ implementations=(
     "optimized-cuda-mpi:louvain"
     "optimized-cuda-mpi:red-blue"
 )
-# make profile ARGS="-p nsys -i $(IFS=,; echo "${implementations[*]}")" && sleep 1
+make profile ARGS="-p nsys -i $(IFS=,; echo "${implementations[*]}")" && sleep 1
 log_success "Nsight Systems profiling complete"
 echo ""
 

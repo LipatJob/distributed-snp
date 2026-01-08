@@ -135,7 +135,7 @@ struct DeviceNeuronData {
  * If a rule is applicable, its index is stored in S_k[nid].
  * Deterministic: First applicable rule wins.
  */
-__global__ void computeSpikingVectorKernel(
+__global__ void evaluateRulesKernel(
     int num_neurons,
     const int* __restrict__ config,      // C_k
     const int* __restrict__ delay,       // D_k
@@ -176,7 +176,7 @@ __global__ void computeSpikingVectorKernel(
  * 2. Sets delays.
  * 3. Iterates Synapse Matrix (Sy_Pi) to distribute produced spikes.
  */
-__global__ void consumeSpikesAndProduceKernel(
+__global__ void propagateSpikesKernel(
     int num_neurons,
     int max_out_degree,
     int* config,                     // C_k (Read/Write)
@@ -234,7 +234,7 @@ __global__ void consumeSpikesAndProduceKernel(
  * Decrements delay counters for closed neurons.
  * When delay reaches 0, sends pending emissions.
  */
-__global__ void updateDelaysAndEmitKernel(
+__global__ void propagateDelayedSpikesKernel(
     int num_neurons,
     int max_out_degree,
     int* delay_vector,
@@ -439,7 +439,7 @@ public:
 
             // 1. Update Delays and Emit Pending Spikes (from previous step)
             // This must happen FIRST so neurons can open and pending spikes can be sent
-            updateDelaysAndEmitKernel<<<grid_size, BLOCK_SIZE>>>(
+            propagateDelayedSpikesKernel<<<grid_size, BLOCK_SIZE>>>(
                 num_neurons,
                 max_out_degree,
                 d_state.delay_vector,
@@ -452,7 +452,7 @@ public:
 
             // 2. Calculate Spiking Vector (Determine active rules)
             // Only open neurons (delay==0) can fire
-            computeSpikingVectorKernel<<<grid_size, BLOCK_SIZE>>>(
+            evaluateRulesKernel<<<grid_size, BLOCK_SIZE>>>(
                 num_neurons,
                 d_state.config_vector,
                 d_state.delay_vector,
@@ -464,7 +464,7 @@ public:
             CUDA_CHECK(cudaGetLastError());
 
             // 3. Perform Transition (Consume, Produce via Sy_Pi, Set Delays)
-            consumeSpikesAndProduceKernel<<<grid_size, BLOCK_SIZE>>>(
+            propagateSpikesKernel<<<grid_size, BLOCK_SIZE>>>(
                 num_neurons,
                 max_out_degree,
                 d_state.config_vector,

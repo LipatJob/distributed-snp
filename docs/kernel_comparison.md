@@ -7,8 +7,8 @@ This document provides a comparison of the CUDA kernels used across different si
 | Functionality | Sparse CUDA | Optimized CUDA (Single) | Naive MPI+CUDA | Optimized MPI+CUDA |
 | :--- | :--- | :--- | :--- | :--- |
 | **Reset State** | `resetNeuronsKernel` | `resetNeuronsKernel` | `resetNeuronsKernel` | `resetNeuronsKernel` |
-| **Neuron Dynamics**<br>*(Update Delays, Check Rules, Fire)* | `computeSpikingVectorKernel`<br>*(Calculates active rules)* | `updateNeuronDynamicsKernel`<br>*(Fused: Delay + Rules + Output Gen)* | `updateNeuronDynamicsKernel`<br>*(Fused: Delay + Rules + Local Output)* | `updateNeuronDynamicsKernel`<br>*(Fused: Delay + Rules + Prod Set)* |
-| **Spike Propagation**<br>*(Move flow from neuron to neuron)* | `consumeSpikesAndProduceKernel`<br>*(Immediate firing)*<br><br>`updateDelaysAndEmitKernel`<br>*(Delayed firing)* | `propagateSpikesKernel`<br>*(Unified propagation)* | `propagateSpikesKernel`<br>*(Reads from global gather buffer)* | `propagateLocalSpikesKernel`<br>*(intra-node only)* |
+| **Evaluation**<br>*(Update Delays, Check Rules, Fire)* | `computeSpikingVectorKernel`<br>*(Calculates active rules)* | `updateNeuronDynamicsKernel`<br>*(Fused: Delay + Rules + Output Gen)* | `updateNeuronDynamicsKernel`<br>*(Fused: Delay + Rules + Local Output)* | `updateNeuronDynamicsKernel`<br>*(Fused: Delay + Rules + Prod Set)* |
+| **Propagation**<br>*(Move flow from neuron to neuron)* | `consumeSpikesAndProduceKernel`<br>*(Immediate firing)*<br><br>`updateDelaysAndEmitKernel`<br>*(Delayed firing)* | `propagateSpikesKernel`<br>*(Unified propagation)* | `propagateSpikesKernel`<br>*(Reads from global gather buffer)* | `propagateLocalSpikesKernel`<br>*(intra-node only)* |
 | **MPI Communication**<br>*(Buffers for network)* | *N/A* | *N/A* | *N/A*<br>*(Handled by host gather)* | `populateExportBufferKernel`<br>*(Pack outgoing)*<br><br>`applyImportedSpikesKernel`<br>*(Unpack incoming)* |
 | **Cleanup** | *Implicit* | *Implicit* | *Implicit* | `clearSpikeProductionKernel` |
 

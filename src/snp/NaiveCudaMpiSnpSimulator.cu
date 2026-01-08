@@ -150,7 +150,7 @@ struct DeviceSynapseData {
  * 3. Applies rules (Deterministic: first valid rule).
  * 4. Writes total output to `local_production_out`.
  */
-__global__ void updateNeuronDynamicsKernel(
+__global__ void evaluateNeuronKernel(
     DeviceNeuronData neurons,
     DeviceRuleData rules,
     int* local_production_out // Output: Size [local_neuron_count]
@@ -398,7 +398,7 @@ public:
             // --- Phase 1: Local Compute ---
             if (my_neuron_count > 0) {
                 int grid = (static_cast<size_t>(my_neuron_count) + BLOCK_SIZE - 1) / BLOCK_SIZE;
-                updateNeuronDynamicsKernel<<<grid, BLOCK_SIZE>>>(
+                evaluateNeuronKernel<<<grid, BLOCK_SIZE>>>(
                     d_local_neurons, d_local_rules, d_local_production
                 );
                 CUDA_CHECK(cudaGetLastError());

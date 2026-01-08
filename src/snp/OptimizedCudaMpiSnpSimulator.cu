@@ -251,7 +251,7 @@ __global__ void applyImportedSpikesKernel(DeviceNeuronData neurons, DeviceImport
 
 // 7. Fused kernel: UpdateStatus + SelectAndFire + Cleanup
 // This reduces kernel launch overhead by combining three operations
-__global__ void updateNeuronDynamicsKernel(DeviceNeuronData neurons, DeviceRuleData rules) {
+__global__ void evaluateNeuronKernel(DeviceNeuronData neurons, DeviceRuleData rules) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= neurons.count) return;
 
@@ -486,7 +486,7 @@ public:
 
                 // OPTIMIZATION: Use fused kernel to reduce launch overhead
                 // This combines UpdateStatus + SelectAndFire in one kernel
-                updateNeuronDynamicsKernel<<<gridSize, BLOCK_SIZE, 0, compute_stream>>>(d_neurons, d_rules);
+                evaluateNeuronKernel<<<gridSize, BLOCK_SIZE, 0, compute_stream>>>(d_neurons, d_rules);
                 
                 // Propagate spikes locally and to export buffers (can run in parallel conceptually)
                 if (d_local_synapses.count > 0) {

@@ -122,7 +122,7 @@ struct DeviceSynapseData {
  * 5. Output scheduling (immediate or delayed)
  * * Writes total spikes to emit this step into `current_output`.
  */
-static __global__ void updateNeuronDynamicsKernel(
+static __global__ void evaluateNeuronKernel(
     DeviceNeuronData neurons,
     const int* __restrict__ rule_start_idx,
     const int* __restrict__ rule_count,
@@ -295,7 +295,7 @@ public:
         
         for (int i = 0; i < steps; ++i) {
             // Kernel 1: Neuron Logic (Update, Fire, Generate Output)
-            updateNeuronDynamicsKernel<<<neuron_grid, BLOCK_SIZE>>>(
+            evaluateNeuronKernel<<<neuron_grid, BLOCK_SIZE>>>(
                 d_neurons,
                 d_rules.rule_start_idx,
                 d_rules.rule_count,
